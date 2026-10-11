@@ -1,5 +1,5 @@
 import { MINUTES_PER_DAY, formatClock, type WorldTime } from './clock';
-import { CLINIC, DANFO, FOOD, HIT_MIN_SPEED, KNOCKOUT, MAX_ENERGY, OFFICE_SHIFT, SLEEP, VEHICLE_HIT, type FoodId, type LocationId, type TreatmentId, type VehicleKind } from './data';
+import { CLINIC, DANFO, DANFO_ROUTES, FOOD, HIT_MIN_SPEED, KNOCKOUT, MAX_ENERGY, OFFICE_SHIFT, SLEEP, VEHICLE_HIT, type FoodId, type LocationId, type TreatmentId, type VehicleKind } from './data';
 import { applyChoice, checkChoice, type NpcId } from './dialogue';
 import type { PlayerState } from './state';
 
@@ -77,15 +77,18 @@ export function applyAction(prev: PlayerState, action: Action, now: WorldTime): 
     }
 
     case 'danfo': {
-      if (s.location !== 'bus_stop') return fail('Danfos leave from the bus stop.');
-      if (s.money < DANFO.fare) return fail('Not enough for the fare.');
+      if (!DANFO.boardAt.includes(s.location)) return fail('Danfos leave from the bus stop or the market park.');
+      const route = DANFO_ROUTES[action.to];
+      if (!route) return fail('No danfo goes there.');
+      if (action.to === s.location) return fail('You are already here.');
+      if (s.money < route.fare) return fail('Not enough for the fare.');
       if (s.energy < DANFO.energyCost) return fail('Too tired to travel.');
-      s.money -= DANFO.fare;
+      s.money -= route.fare;
       s.energy -= DANFO.energyCost;
       s.location = action.to;
-      s.busyUntil = now.totalMinutes + DANFO.durationMinutes;
+      s.busyUntil = now.totalMinutes + route.minutes;
       s.busyWith = 'travel';
-      return { ok: true, state: s, message: `Danfo to ${action.to.replace('_', ' ')}. -₦${DANFO.fare}` };
+      return { ok: true, state: s, message: `Danfo to ${route.name.toLowerCase()}. -₦${route.fare}` };
     }
 
     case 'sleep': {

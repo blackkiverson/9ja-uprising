@@ -1,5 +1,6 @@
 import '@fontsource/bungee';
 import * as THREE from 'three';
+import { DANFO_ROUTES } from '@9ja/shared';
 import { Game } from './game';
 import { Music } from './audio/music';
 import { Dialogue } from './dialogue';
@@ -10,6 +11,7 @@ import { Birds } from './scene/birds';
 import { Clouds } from './scene/clouds';
 import { Collisions } from './scene/collision';
 import { Daylight } from './scene/daylight';
+import { DanfoRide } from './scene/ride';
 import { Npcs } from './scene/npcs';
 import { Smoke } from './scene/smoke';
 import { Space } from './scene/space';
@@ -54,7 +56,7 @@ const npcs = new Npcs(scene, world.npcSpots, document.getElementById('npc-tags')
 let dialogue: Dialogue;
 const hud = new Hud(
   game,
-  () => teleportTo(placeById('office').door),
+  (to) => boardDanfo(to),
   (npc) => dialogue.open(npc),
   (minutes) => startLapse(minutes),
 );
@@ -134,7 +136,7 @@ const busy = (e: (typeof world.roads.edges)[number]) => {
 };
 const smoke = new Smoke(scene);
 for (const s of world.smokeSpots) smoke.addSource(s.p, s.kind);
-const traffic = new Traffic(scene, world.roads, new Rng(77), busy, [placeById('food_stall').door, placeById('bus_stop').door]);
+const traffic = new Traffic(scene, world.roads, new Rng(77), busy, [placeById('food_stall').door, placeById('bus_stop').door, placeById('market').door]);
 const intro = new Intro();
 const introEl = document.getElementById('intro')!;
 const startGame = () => {
@@ -197,6 +199,30 @@ function nearestPlace(): Place | null {
 if (import.meta.env.DEV) Object.assign(window, { __9ja: { game, player, places, scene, renderer, camera, world, rig, THREE, teleportTo, intro, npcs, dialogue, traffic, findPath, music, smoke } });
 
 const daylight = new Daylight(scene, world.hemi, world.sun);
+
+// --- Danfo rides: board, wait for it to fill up, then ride the streets to the stop. ---
+const ride = new DanfoRide(scene, world.roads);
+let rideTo: Place['id'] | null = null;
+function boardDanfo(to: Place['id']): void {
+  const door = placeById(to).door;
+  player.followPath([]);
+  if (!ride.start(player.ground, door)) {
+    teleportTo(door); // no road there: just arrive
+    return;
+  }
+  rideTo = to;
+  player.root.visible = false;
+  const name = DANFO_ROUTES[to]?.name ?? to;
+  hud.toast(`Conductor: "${name}! ${name}! Enter with your change o!"`);
+}
+function endRide(): void {
+  if (!rideTo) return;
+  ride.stop();
+  player.root.visible = true;
+  teleportTo(placeById(rideTo).door);
+  rig.update(player.ground, 0, true);
+  rideTo = null;
+}
 
 // --- Time-lapse: skipping time (fast-forward, sleep) races the sky through the hours skipped. ---
 // Timed on the real clock, not the frame delta (which is capped), so a slow frame can't drag it out.
@@ -273,8 +299,18 @@ renderer.setAnimationLoop(() => {
     teleportTo(placeById('office').door);
   }
   player.update(dt, walk, inOffice ? noWalls : world.collisions, world.heightAt);
+  // On the danfo: the player rides inside it. Skipping the ride (no longer busy) ends it at once;
+  // arriving early catches the clock up to the fare's ride time.
+  if (rideTo) {
+    if (!isBusy()) endRide();
+    else if (ride.update(dt)) {
+      game.dispatch({ type: 'fast_forward' });
+      hud.toast('Owa o! You have arrived.');
+      endRide();
+    } else player.teleport(ride.position);
+  }
   hitCooldown = Math.max(0, hitCooldown - dt);
-  const struck = player.push((p) => {
+  const struck = rideTo ? null : player.push((p) => {
     const hit = traffic.pushOut(p);
     // Thrown clear, but never into a wall.
     if (hit) world.collisions.resolve(p);
@@ -299,10 +335,10 @@ renderer.setAnimationLoop(() => {
   npcs.update(clock.elapsedTime, dt, playing ? ground : null, camera, !dialogue.isOpen);
   world.update(dt);
   space.update(dt, camera);
-  for (let i = 0, n = 1 + Math.round(rush * 4); i < n; i++) traffic.update(dt, playing ? player.ground : null, camera);
+  for (let i = 0, n = 1 + Math.round(rush * 4); i < n; i++) traffic.update(dt, playing ? player.ground : null, camera, rideTo ? ride.position : null);
   smoke.update(dt * (1 + rush * 2), camera, playing ? player.ground : null, traffic.exhausts());
   moveMarker.update(dt);
-  player.setMarkerVisible(playing);
+  player.setMarkerVisible(playing && !rideTo);
   player.faceMarker(camera);
   birds.update(dt * (1 + rush * 3));
 

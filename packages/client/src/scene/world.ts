@@ -17,6 +17,7 @@ import {
   houseKit,
   kekeKit,
   kioskKit,
+  marketStallKit,
   mosqueKit,
   pitchKit,
   poleKit,
@@ -286,6 +287,19 @@ export function buildWorld(scene: THREE.Scene): World {
   // Reserved sites along the main road at the hub (north = -1, south = +1).
   const MAIN_HW = 3;
   const FRONT = MAIN_HW + 0.6; // carriageway + gutter
+  // The market sits across the city, far enough to be worth a danfo ride.
+  const MARKET_S = (() => {
+    let best = 0;
+    let bestD = Infinity;
+    mainEdge.pts.forEach((p, i) => {
+      const d = Math.abs(chartOf(p).lambda - 1.9);
+      if (d < bestD) {
+        bestD = d;
+        best = mainEdge.arc[i]!;
+      }
+    });
+    return best;
+  })();
   const reserved = [
     { s: HUB_S, side: -1 as const, dist: FRONT + 2.3, r: 9 }, // food stall + kiosks
     { s: HUB_S - 6, side: 1 as const, dist: FRONT + 2, r: 8 }, // bus stop
@@ -294,6 +308,7 @@ export function buildWorld(scene: THREE.Scene): World {
     { s: HUB_S + 22, side: -1 as const, dist: FRONT + 9.5, r: 11 }, // church
     { s: HUB_S - 34, side: 1 as const, dist: FRONT + 7, r: 9 }, // mosque
     { s: HUB_S + 36, side: -1 as const, dist: FRONT + 5.5, r: 10 }, // clinic
+    { s: MARKET_S, side: 1 as const, dist: FRONT + 7.5, r: 15 }, // market and motor park
   ].map((r) => ({ ...r, c: roadsideOf(mainEdge, r.s, r.side, r.dist).frame.c }));
   const nearReserved = (p: THREE.Vector3, pad: number) => reserved.some((r) => r.c.distanceTo(p) < r.r + pad);
 
@@ -612,6 +627,28 @@ export function buildWorld(scene: THREE.Scene): World {
     occluders.push(m2);
     collisions.rect(mosque, 10.6, 10.6);
     footprints.add(mosque, 12, 12);
+    places.push({ id: 'church', label: 'Church', door: church.toWorld(0, 0, 10.3) });
+    places.push({ id: 'mosque', label: 'Mosque', door: mosque.toWorld(0, 0, 6.2) });
+  }
+  {
+    // Oja market: rows of produce stalls off the main road, with its own danfo park on the verge.
+    const market = site(7).frame;
+    for (const lz of [-3.6, 0.6]) {
+      for (const lx of [-6.3, -2.1, 2.1, 6.3]) {
+        const f = subFrame(market, lx, lz);
+        prop(marketStallKit(rng), f);
+        collisions.rect(f, 2.5, 1.5);
+      }
+    }
+    smokeSpots.push({ p: market.toWorld(6.3, 1.4, 0.6), kind: 'cook' }); // the suya man
+    footprints.add(market, 24, 12);
+    places.push({ id: 'market', label: 'Oja Market (motor park)', door: market.toWorld(0, 0, 4.6) });
+    // Danfos wait nose-out at either end of the lot, clear of the bending road.
+    for (const lx of [-10, 10]) {
+      const f = subFrame(market, lx, -1);
+      prop(danfoKit(), f);
+      collisions.rect(f, 2.1, 4.8);
+    }
   }
 
   // NPC spots near the places they belong to.

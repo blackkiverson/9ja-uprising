@@ -245,7 +245,8 @@ export class Traffic {
    * focus: where the camera looks in play (null on the title screen, where everything on the
    * visible face of the planet counts as on screen).
    */
-  update(dt: number, player: THREE.Vector3 | null, camera: THREE.Camera): void {
+  /** obstacle: something traffic queues behind (the player's danfo). */
+  update(dt: number, player: THREE.Vector3 | null, camera: THREE.Camera, obstacle: THREE.Vector3 | null = null): void {
     this.t += dt;
     this.farClock += dt;
     const farTick = this.farClock >= Traffic.FAR_TICK;
@@ -301,7 +302,12 @@ export class Traffic {
         }
       }
       const here = this.roads.at(v.edge, v.s);
-      // No braking for the player: in Lagos traffic, you get out of the way.
+      // No braking for the player: in Lagos traffic, you get out of the way. They do queue
+      // behind the player's danfo, though.
+      if (obstacle) {
+        const ahead = obstacle.clone().sub(here.p).dot(here.t.clone().multiplyScalar(v.dir));
+        if (ahead > 0 && ahead < 7 && obstacle.distanceTo(here.p) < 7.5) gap = Math.min(gap, ahead - 1);
+      }
       const safe = v.length + 1.5;
       if (gap < safe) target = 0;
       else if (gap < safe + 5) target = Math.min(target, (gap - safe) * 0.9);

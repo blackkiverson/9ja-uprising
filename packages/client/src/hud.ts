@@ -1,4 +1,4 @@
-import { CLINIC, DANFO, FOOD, NPCS, OFFICE_SHIFT, WEAPONS, formatClock, type Action, type ActionResult, type FoodId, type NpcId, type TreatmentId } from '@9ja/shared';
+import { CLINIC, DANFO, DANFO_ROUTES, FOOD, NPCS, OFFICE_SHIFT, WEAPONS, formatClock, type Action, type ActionResult, type FoodId, type LocationId, type NpcId, type TreatmentId } from '@9ja/shared';
 import type { Game } from './game';
 import type { Place } from './scene/world';
 
@@ -11,7 +11,7 @@ export class Hud {
 
   constructor(
     private game: Game,
-    private onDanfo: () => void,
+    private onDanfo: (to: LocationId) => void,
     private onTalk: (npc: NpcId) => void,
     /** Time was skipped (fast-forward, sleep): play the time-lapse over these minutes. */
     private onSkip: (minutes: number) => void,
@@ -109,9 +109,14 @@ export class Hud {
         }
         break;
       }
-      case 'bus_stop':
-        add(`Danfo to office (${naira(DANFO.fare)})`, { type: 'danfo', to: 'office' }, this.onDanfo);
-        break;
+    }
+
+    // Danfo park: a ride to every key place on the planet.
+    if (near && DANFO.boardAt.includes(near.id)) {
+      for (const [to, route] of Object.entries(DANFO_ROUTES)) {
+        if (to === near.id) continue;
+        add(`🚐 ${route.name} (${naira(route.fare)})`, { type: 'danfo', to: to as LocationId }, () => this.onDanfo(to as LocationId));
+      }
     }
 
     for (const [id, count] of Object.entries(s.inventory)) {

@@ -1,6 +1,6 @@
 // Tunable numbers for Prototype 0.1. Prices in naira.
 
-export type LocationId = 'home' | 'office' | 'food_stall' | 'bus_stop' | 'clinic';
+export type LocationId = 'home' | 'office' | 'food_stall' | 'bus_stop' | 'clinic' | 'church' | 'mosque' | 'market';
 export type WeaponId = 'fist';
 
 export const WEAPONS: Record<WeaponId, { name: string }> = {
@@ -31,9 +31,20 @@ export const OFFICE_SHIFT = {
 };
 
 export const DANFO = {
-  fare: 400,
   energyCost: 5,
-  durationMinutes: 45,
+  /** Where you can board: the hub bus stop and the market's motor park. */
+  boardAt: ['bus_stop', 'market'] as LocationId[],
+};
+
+/** Danfo routes: fare and ride time to each key place (the far-side market costs more). */
+export const DANFO_ROUTES: Partial<Record<LocationId, { name: string; fare: number; minutes: number }>> = {
+  home: { name: 'Home', fare: 200, minutes: 15 },
+  office: { name: 'Work', fare: 300, minutes: 25 },
+  clinic: { name: 'Clinic', fare: 300, minutes: 20 },
+  church: { name: 'Church', fare: 200, minutes: 15 },
+  mosque: { name: 'Mosque', fare: 200, minutes: 15 },
+  market: { name: 'Market', fare: 500, minutes: 45 },
+  bus_stop: { name: 'Bus stop', fare: 500, minutes: 45 },
 };
 
 // Nobody brakes for pedestrians. Damage at full speed; slower hits scale down.

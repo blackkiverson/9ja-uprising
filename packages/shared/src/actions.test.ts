@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyAction } from './actions';
 import { MINUTES_PER_DAY, type WorldTime } from './clock';
-import { CLINIC, DANFO, FOOD, KNOCKOUT, OFFICE_SHIFT, STARTING_MONEY, VEHICLE_HIT } from './data';
+import { CLINIC, DANFO_ROUTES, FOOD, KNOCKOUT, OFFICE_SHIFT, STARTING_MONEY, VEHICLE_HIT } from './data';
 import { createPlayer, type PlayerState } from './state';
 
 const at = (day: number, minuteOfDay: number): WorldTime => ({
@@ -43,7 +43,17 @@ describe('applyAction', () => {
     const p = { ...createPlayer(), location: 'bus_stop' as const };
     const after = ok(applyAction(p, { type: 'danfo', to: 'office' }, at(1, 420)));
     expect(after.location).toBe('office');
-    expect(after.money).toBe(STARTING_MONEY - DANFO.fare);
+    expect(after.money).toBe(STARTING_MONEY - DANFO_ROUTES.office!.fare);
+    expect(after.busyUntil).toBe(at(1, 420).totalMinutes + DANFO_ROUTES.office!.minutes);
+  });
+
+  it('runs danfos from the bus stop and the market, nowhere else', () => {
+    const atMarket = ok(applyAction({ ...createPlayer(), location: 'bus_stop' as const }, { type: 'danfo', to: 'market' }, at(1, 420)));
+    expect(atMarket.location).toBe('market');
+    const home = ok(applyAction({ ...atMarket, busyUntil: 0 }, { type: 'danfo', to: 'home' }, at(1, 500)));
+    expect(home.location).toBe('home');
+    expect(applyAction({ ...home, busyUntil: 0 }, { type: 'danfo', to: 'mosque' }, at(1, 600)).ok).toBe(false);
+    expect(applyAction({ ...createPlayer(), location: 'market' as const }, { type: 'danfo', to: 'market' }, at(1, 600)).ok).toBe(false);
   });
 
   it('sleeps through to morning once a night and counts personal days', () => {

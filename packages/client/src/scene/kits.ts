@@ -410,3 +410,19 @@ export function pitchKit(w: number, d: number): Kit {
   }
   return k;
 }
+
+/** A market stall: a trestle table of produce under a coloured canopy. */
+export function marketStallKit(rng: Rng): Kit {
+  const k = new Kit();
+  k.add(box(2.4, 0.85, 1.4), mix(0x9a7a5a, GRIME, rng.range(0, 0.3)), [0, 0.42, 0]);
+  for (const [x, z] of [[-1.15, -0.65], [1.15, -0.65], [-1.15, 0.65], [1.15, 0.65]] as const) {
+    k.add(cyl(0.05, 0.05, 2.3, 5), 0x5a5550, [x, 1.15, z]);
+  }
+  k.add(box(2.9, 0.1, 1.9), aged(rng, rng.pick(KIOSKS)), [0, 2.32, 0]);
+  // Heaps of tomatoes, peppers, yams, greens and garri.
+  for (let i = 0; i < 6; i++) {
+    const color = rng.pick([0xc9402f, 0xe0a23a, 0x7a5a3a, 0x5f9e6e, 0xe8dcc0, 0xb8452f]);
+    k.add(new THREE.IcosahedronGeometry(rng.range(0.16, 0.26), 0), color, [-0.9 + i * 0.36, 0.95, rng.range(-0.35, 0.35)]);
+  }
+  return k;
+}
