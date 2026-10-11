@@ -27,7 +27,8 @@ export class Hud {
 
   /** Called every frame; only rebuilds the action buttons when something relevant changed. */
   /** clockMinute: the time to show (races during a time-lapse). */
-  update(near: Place | null, npc: NpcId | null = null, clockMinute?: number): void {
+  /** threat: agberos are on you; offers a button to settle them. */
+  update(near: Place | null, npc: NpcId | null = null, clockMinute?: number, threat: { settle: number; onSettle: () => void } | null = null): void {
     const s = this.game.state;
     const now = this.game.now();
     const busy = now.totalMinutes < s.busyUntil;
@@ -53,7 +54,7 @@ export class Hud {
     place.style.display = near || busy ? 'block' : 'none';
     place.textContent = busy ? `Busy until ${formatClock(s.busyUntil % 1440)}` : (near?.label ?? '');
 
-    const key = JSON.stringify([near?.id, npc, busy, s]);
+    const key = JSON.stringify([near?.id, npc, busy, s, threat !== null]);
     if (key === this.lastKey) return;
     this.lastKey = key;
 
@@ -74,6 +75,14 @@ export class Hud {
       });
       actions.append(btn);
     };
+
+    if (threat) {
+      const btn = document.createElement('button');
+      btn.className = 'danger';
+      btn.textContent = `💸 Settle them (${naira(threat.settle)})`;
+      btn.addEventListener('click', threat.onSettle);
+      actions.append(btn);
+    }
 
     if (busy) {
       const label = { work: 'Fast forward to end of shift', travel: 'Skip the ride', recovering: 'Skip recovery', treatment: 'Skip treatment' }[s.busyWith ?? 'work'];

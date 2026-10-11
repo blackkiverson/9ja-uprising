@@ -1,6 +1,7 @@
 import '@fontsource/bungee';
 import * as THREE from 'three';
-import { DANFO_ROUTES } from '@9ja/shared';
+import { AGBERO, AGBERO_LINES, DANFO_ROUTES, agberosSettled } from '@9ja/shared';
+import { Bubbles } from './bubbles';
 import { Game } from './game';
 import { Music } from './audio/music';
 import { Dialogue } from './dialogue';
@@ -269,17 +270,72 @@ const onStruck = (vehicle: 'car' | 'danfo' | 'keke', speed: number) => {
   player.followPath([]);
   player.jump();
   hud.toast(r.message);
+  hurt(r.knockedOut === true);
+};
+
+/** Red flash and health-bar shake; a knockout wakes you at the clinic. */
+function hurt(knockedOut: boolean): void {
   document.body.classList.remove('hurt');
   void document.body.offsetWidth; // restart the flash animation
   document.body.classList.add('hurt');
   clearTimeout(hurtTimer);
   hurtTimer = window.setTimeout(() => document.body.classList.remove('hurt'), 700);
-  if (r.knockedOut) {
+  if (knockedOut) {
     dialogue.close();
+    bubbles.clear();
     teleportTo(placeById('clinic').door);
     rig.update(player.ground, 0, true);
   }
-};
+}
+
+// --- Agberos: they close in after dark, shout, and rough you up if you hang about without
+// settling them. Settling (₦500) buys peace till morning. Running works: they're slower. ---
+const bubbles = new Bubbles(document.getElementById('bubbles')!);
+const pick = <T,>(list: readonly T[]) => list[Math.floor(Math.random() * list.length)]!;
+let gripTime = 0;
+let nextShout = 0;
+let roughCooldown = 0;
+let harassed = false;
+function settleAgberos(): void {
+  const r = game.dispatch({ type: 'settle_agberos' });
+  hud.toast(r.ok ? r.message : r.reason);
+  if (!r.ok) return;
+  const nearest = traffic.agberosNear(player.ground, 4)[0];
+  if (nearest) bubbles.say(nearest, pick(AGBERO_LINES.settled), 2.6, 'calm');
+  gripTime = 0;
+}
+function updateAgberos(dt: number, active: boolean): void {
+  for (const e of traffic.takeEvents()) if (active) bubbles.say(e.at.clone(), pick(AGBERO_LINES.gaveUp), 2.2);
+  const grip = active ? traffic.agberosNear(player.ground, 1.9) : [];
+  const closing = active ? traffic.agberosNear(player.ground, 9) : [];
+  harassed = grip.length > 0;
+  nextShout -= dt;
+  roughCooldown -= dt;
+  if (closing.length && nextShout <= 0) {
+    bubbles.say(pick(closing), pick(harassed ? AGBERO_LINES.grip : AGBERO_LINES.approach));
+    nextShout = 1.6 + Math.random() * 1.4;
+  }
+  // Too close and not paying: within a second or two they either shove you to the ground
+  // (health) or go through your pockets (money).
+  gripTime = harassed ? gripTime + dt : Math.max(0, gripTime - dt * 2);
+  if (gripTime > 1.5 && roughCooldown <= 0) {
+    const kind = Math.random() < 0.5 ? 'push' : 'rob';
+    const healthBefore = game.state.health;
+    const r = game.dispatch({ type: 'agbero_rough_up', kind });
+    if (r.ok) {
+      // A robbery with empty pockets turns into a shove, so judge by what actually happened.
+      const pushed = r.knockedOut === true || r.state.health < healthBefore;
+      bubbles.say(grip[0]!, pick(pushed ? AGBERO_LINES.push : AGBERO_LINES.rob), 2.4);
+      hud.toast(r.message);
+      if (pushed) {
+        player.knockDown();
+        hurt(r.knockedOut === true);
+      } else player.followPath([]);
+    }
+    gripTime = 0;
+    roughCooldown = 3.5;
+  }
+}
 
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
@@ -344,7 +400,10 @@ renderer.setAnimationLoop(() => {
   npcs.update(clock.elapsedTime, dt, playing ? ground : null, camera, !dialogue.isOpen);
   world.update(dt);
   space.update(dt, camera);
-  for (let i = 0, n = 1 + Math.round(rush * 4); i < n; i++) traffic.update(dt, playing ? player.ground : null, camera, rideTo ? ride.position : null, daylight.lamps);
+  const hostile = playing && !rideTo && !isBusy() && lapse === null && daylight.lamps > 0.3 && !agberosSettled(game.state, game.now());
+  for (let i = 0, n = 1 + Math.round(rush * 4); i < n; i++) traffic.update(dt, playing ? player.ground : null, camera, rideTo ? ride.position : null, daylight.lamps, hostile ? player.ground : null);
+  updateAgberos(dt, hostile);
+  bubbles.update(camera);
   smoke.update(dt * (1 + rush * 2), camera, playing ? player.ground : null, traffic.exhausts());
   moveMarker.update(dt);
   player.setMarkerVisible(playing && !rideTo);
@@ -362,6 +421,6 @@ renderer.setAnimationLoop(() => {
   document.body.classList.toggle('playing', playing);
   document.body.classList.toggle('talking', dialogue.isOpen);
   document.body.classList.toggle('lapse', lapse !== null);
-  if (playing) hud.update(near, nearNpc, minute);
+  if (playing) hud.update(near, nearNpc, minute, harassed ? { settle: AGBERO.settle, onSettle: settleAgberos } : null);
   renderer.render(scene, camera);
 });

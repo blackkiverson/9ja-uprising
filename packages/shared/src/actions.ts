@@ -1,5 +1,5 @@
 import { MINUTES_PER_DAY, formatClock, type WorldTime } from './clock';
-import { CLINIC, DANFO, DANFO_ROUTES, FOOD, HIT_MIN_SPEED, KNOCKOUT, MAX_ENERGY, OFFICE_SHIFT, SLEEP, VEHICLE_HIT, type FoodId, type LocationId, type TreatmentId, type VehicleKind } from './data';
+import { AGBERO, CLINIC, DANFO, DANFO_ROUTES, FOOD, HIT_MIN_SPEED, KNOCKOUT, MAX_ENERGY, OFFICE_SHIFT, SLEEP, VEHICLE_HIT, type FoodId, type LocationId, type TreatmentId, type VehicleKind } from './data';
 import { applyChoice, checkChoice, type NpcId } from './dialogue';
 import type { PlayerState } from './state';
 
@@ -14,7 +14,10 @@ export type Action =
   | { type: 'dialogue'; npc: NpcId; node: string; choice: number }
   | { type: 'hit_by_vehicle'; vehicle: VehicleKind; speed: number }
   | { type: 'fast_forward' }
-  | { type: 'treat'; treatment: TreatmentId };
+  | { type: 'treat'; treatment: TreatmentId }
+  | { type: 'settle_agberos' }
+  /** push: shoved to the ground (health); rob: pockets emptied (money). The caller rolls which. */
+  | { type: 'agbero_rough_up'; kind: 'push' | 'rob' };
 
 export type ActionResult =
   | { ok: true; state: PlayerState; message: string; knockedOut?: boolean; skipped?: number }
@@ -30,6 +33,7 @@ export function applyAction(prev: PlayerState, action: Action, now: WorldTime): 
   // Traffic doesn't wait for you to be free.
   if (action.type === 'hit_by_vehicle') return hitByVehicle(prev, action.vehicle, action.speed, now);
   if (action.type === 'fast_forward') return fastForward(prev, now);
+  if (action.type === 'agbero_rough_up') return roughUp(prev, action.kind, now);
   if (now.totalMinutes < prev.busyUntil) {
     return fail(`Busy for another ${prev.busyUntil - now.totalMinutes} minutes.`);
   }
@@ -129,6 +133,14 @@ export function applyAction(prev: PlayerState, action: Action, now: WorldTime): 
       return { ok: true, state: s, message: `${t.name}. +${heal} health, -₦${price.toLocaleString()}` };
     }
 
+    case 'settle_agberos': {
+      if (agberosSettled(s, now)) return fail('You don already settle them tonight.');
+      if (s.money < AGBERO.settle) return fail('You no get the money. Run!');
+      s.money -= AGBERO.settle;
+      s.flags.agbero_settled = nightOf(now);
+      return { ok: true, state: s, message: `Settled the agberos. -₦${AGBERO.settle}` };
+    }
+
     case 'relationship': {
       const current = s.relationships[action.npc] ?? 0;
       s.relationships[action.npc] = Math.max(-100, Math.min(100, current + action.delta));
@@ -146,13 +158,43 @@ function hitByVehicle(prev: PlayerState, vehicle: VehicleKind, speed: number, no
   s.health = Math.max(0, s.health - damage);
   if (s.health > 0) return { ok: true, state: s, message: `${hit.name} no dey stop! -${damage} health` };
 
+  return knockOut(s, now, `Knocked down by a ${hit.name.toLowerCase()}.`);
+}
+
+/** Zero health: wake at the clinic, patched up, with a bill. Mutates and returns s. */
+function knockOut(s: PlayerState, now: WorldTime, cause: string): ActionResult {
   const bill = Math.min(s.money, KNOCKOUT.bill);
   s.health = KNOCKOUT.health;
   s.money -= bill;
   s.location = 'clinic';
   s.busyUntil = now.totalMinutes + KNOCKOUT.minutes;
   s.busyWith = 'recovering';
-  return { ok: true, state: s, message: `Knocked down by a ${hit.name.toLowerCase()}. You wake up at the clinic. -₦${bill.toLocaleString()}`, knockedOut: true };
+  return { ok: true, state: s, message: `${cause} You wake up at the clinic. -₦${bill.toLocaleString()}`, knockedOut: true };
+}
+
+/** Nights run from 05:00 to 05:00, so a payment at 02:00 covers the night it was made in. */
+const nightOf = (now: WorldTime) => Math.floor((now.totalMinutes - 5 * 60) / MINUTES_PER_DAY);
+
+/** True if the player has paid the agberos off tonight. */
+export function agberosSettled(s: PlayerState, now: WorldTime): boolean {
+  return s.flags.agbero_settled === nightOf(now);
+}
+
+/**
+ * Agberos rough you up: either a shove to the ground (health) or a robbery (money, up to a cap).
+ * With empty pockets a robbery turns into a shove.
+ */
+function roughUp(prev: PlayerState, kind: 'push' | 'rob', now: WorldTime): ActionResult {
+  if (agberosSettled(prev, now)) return fail('They know you. Waka pass.');
+  const s = JSON.parse(JSON.stringify(prev)) as PlayerState;
+  if (kind === 'rob' && s.money > 0) {
+    const taken = Math.min(s.money, AGBERO.snatch);
+    s.money -= taken;
+    return { ok: true, state: s, message: `Agberos robbed you. -₦${taken.toLocaleString()}` };
+  }
+  s.health = Math.max(0, s.health - AGBERO.damage);
+  if (s.health === 0) return knockOut(s, now, 'The agberos beat you mercilessly.');
+  return { ok: true, state: s, message: `Agberos pushed you down. -${AGBERO.damage} health` };
 }
 
 /** Skip whatever you're busy with: the personal clock jumps to when it ends. */

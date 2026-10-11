@@ -141,3 +141,17 @@ body.hurt .bar.health { animation: hurt-shake 0.4s; }
   transition: border-width 0.5s ease; }
 body.lapse #app::after { border-width: 6vh 0; }
 body.lapse #clock { color: #e3c24a; }
+
+/* Speech bubbles over agberos (and anyone else who shouts). */
+#bubbles { position: fixed; inset: 0; pointer-events: none; }
+body:not(.playing) #bubbles { display: none; }
+.bubble { position: absolute; left: 0; top: 0; display: none; max-width: 190px; padding: 6px 10px;
+  border: 2px solid var(--ink); border-radius: 12px; background: var(--paper); font-size: 13px; font-weight: 800;
+  line-height: 1.2; text-align: center; animation: bubble-pop 0.18s ease-out; }
+.bubble::after { content: ''; position: absolute; left: 50%; bottom: -9px; width: 12px; height: 12px;
+  background: inherit; border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink);
+  transform: translateX(-50%) rotate(45deg); }
+.bubble.hostile { background: #ffe9e3; color: #8a2a20; }
+@keyframes bubble-pop { from { scale: 0.6; opacity: 0; } to { scale: 1; opacity: 1; } }
+
+#actions button.danger { background: #c0453c; color: #fff8f0; }

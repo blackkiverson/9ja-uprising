@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { applyAction } from './actions';
+import { agberosSettled, applyAction } from './actions';
 import { MINUTES_PER_DAY, type WorldTime } from './clock';
-import { CLINIC, DANFO_ROUTES, FOOD, KNOCKOUT, OFFICE_SHIFT, STARTING_MONEY, VEHICLE_HIT } from './data';
+import { AGBERO, CLINIC, DANFO_ROUTES, FOOD, KNOCKOUT, OFFICE_SHIFT, STARTING_MONEY, VEHICLE_HIT } from './data';
 import { createPlayer, type PlayerState } from './state';
 
 const at = (day: number, minuteOfDay: number): WorldTime => ({
@@ -126,5 +126,26 @@ describe('applyAction', () => {
     expect(full.busyWith).toBe('treatment');
     expect(applyAction({ ...full, busyUntil: 0 }, { type: 'treat', treatment: 'first_aid' }, at(1, 700)).ok).toBe(false);
     expect(applyAction({ ...p, location: 'home' as const }, { type: 'treat', treatment: 'first_aid' }, at(1, 600)).ok).toBe(false);
+  });
+
+  it('agberos push you down or rob you unless you settle them for the night', () => {
+    const p = createPlayer();
+    const pushed = ok(applyAction(p, { type: 'agbero_rough_up', kind: 'push' }, at(2, 23 * 60)));
+    expect(pushed.health).toBe(100 - AGBERO.damage);
+    expect(pushed.money).toBe(STARTING_MONEY);
+    const robbed = ok(applyAction(p, { type: 'agbero_rough_up', kind: 'rob' }, at(2, 23 * 60)));
+    expect(robbed.money).toBe(STARTING_MONEY - AGBERO.snatch);
+    expect(robbed.health).toBe(100);
+    // Nothing to take: they shove you instead.
+    expect(ok(applyAction({ ...p, money: 0 }, { type: 'agbero_rough_up', kind: 'rob' }, at(2, 23 * 60))).health).toBe(100 - AGBERO.damage);
+    const paid = ok(applyAction(p, { type: 'settle_agberos' }, at(2, 23 * 60)));
+    expect(paid.money).toBe(STARTING_MONEY - AGBERO.settle);
+    // Still covered at 02:00 the same night, not the next night.
+    expect(agberosSettled(paid, at(3, 2 * 60))).toBe(true);
+    expect(applyAction(paid, { type: 'agbero_rough_up', kind: 'push' }, at(3, 2 * 60)).ok).toBe(false);
+    expect(agberosSettled(paid, at(3, 22 * 60))).toBe(false);
+    // Low on health: a beating is a knockout.
+    const ko = applyAction({ ...p, health: 5 }, { type: 'agbero_rough_up', kind: 'push' }, at(2, 23 * 60));
+    expect(ko.ok && ko.knockedOut).toBe(true);
   });
 });

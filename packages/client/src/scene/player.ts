@@ -26,6 +26,10 @@ export class PlayerAvatar {
   private shadow: THREE.Mesh;
   private marker = headMarker();
   private clock = 0;
+  /** Body parts, so the figure can be knocked flat while the shadow and marker stay put. */
+  private figure = new THREE.Group();
+  /** Seconds left on the ground after being shoved. */
+  private downTime = 0;
 
   constructor() {
     const body = toonMesh(new THREE.CapsuleGeometry(0.45, 1, 4, 8), 0x2e7d5b);
@@ -38,7 +42,8 @@ export class PlayerAvatar {
       new THREE.CircleGeometry(0.6, 16).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ color: 0x1c2b1a, transparent: true, opacity: 0.25, depthWrite: false }),
     );
-    this.root.add(body, head, afro, this.shadow);
+    this.figure.add(body, head, afro);
+    this.root.add(this.figure, this.shadow);
 
     this.root.add(this.marker);
 
@@ -55,7 +60,7 @@ export class PlayerAvatar {
       g.position.copy(part.position);
       g.renderOrder = 10;
       g.raycast = () => {};
-      this.root.add(g);
+      this.figure.add(g);
     }
   }
 
@@ -107,12 +112,29 @@ export class PlayerAvatar {
     this.marker.visible = v;
   }
 
+  /** Shoved to the ground: flat on your back for a moment, then up again. */
+  knockDown(seconds = 1.6): void {
+    this.downTime = seconds;
+    this.target = null;
+    this.route = [];
+  }
+
+  get isDown(): boolean {
+    return this.downTime > 0;
+  }
+
   jump(): void {
-    if (this.height <= 0) this.vy = JUMP_SPEED;
+    if (this.height <= 0 && this.downTime <= 0) this.vy = JUMP_SPEED;
   }
 
   /** dir: desired walking direction in world space (tangent), or zero. Keyboard wins over click targets. */
   update(dt: number, dir: THREE.Vector3, collisions: Collisions, heightAt: (p: THREE.Vector3) => number = () => 0): void {
+    // On the ground: fall back fast, lie there, get up in the last half second.
+    if (this.downTime > 0) this.downTime = Math.max(0, this.downTime - dt);
+    const flat = this.downTime > 0.45 ? -Math.PI / 2 + 0.12 : 0;
+    this.figure.rotation.x += (flat - this.figure.rotation.x) * Math.min(1, dt * (flat ? 14 : 6));
+    this.figure.position.y = this.figure.rotation.x < -0.3 ? 0.35 : 0;
+    if (this.downTime > 0) dir = new THREE.Vector3();
     const up = this.pos.clone().normalize();
     const before = this.pos.clone();
     let move: THREE.Vector3 | null = null;
@@ -123,7 +145,7 @@ export class PlayerAvatar {
       this.route = [];
       move = dir.clone().addScaledVector(up, -dir.dot(up)).normalize();
       step = SPEED * dt;
-    } else if (this.target) {
+    } else if (this.target && this.downTime <= 0) {
       const to = this.target.clone().setLength(this.pos.length()).sub(this.pos);
       to.addScaledVector(up, -to.dot(up));
       const dist = to.length();

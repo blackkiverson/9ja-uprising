@@ -46,6 +46,20 @@ interface Walker extends Agent {
   owl: number;
 }
 
+type AgberoState = 'idle' | 'approach' | 'return';
+
+interface Agbero {
+  /** Where they stand now, and their spot at the dead lamp. */
+  p: THREE.Vector3;
+  home: THREE.Vector3;
+  face: THREE.Vector3;
+  phase: number;
+  look: Look;
+  appear: number;
+  state: AgberoState;
+  moving: boolean;
+}
+
 interface Look {
   body: number;
   head: number;
@@ -147,7 +161,9 @@ export class Traffic {
   private shadows: Instances;
   private t = 0;
   /** Touts who come out after dark, mostly round the dead street lamps. */
-  private agberos: { p: THREE.Vector3; up: THREE.Vector3; face: THREE.Vector3; phase: number; look: Look; appear: number }[] = [];
+  private agberos: Agbero[] = [];
+  /** Things the game reacts to (speech): an agbero giving up the chase. */
+  private events: { kind: 'gaveUp'; at: THREE.Vector3 }[] = [];
   private headGlow: THREE.InstancedMesh;
   private tailGlow: THREE.InstancedMesh;
   private beams: THREE.InstancedMesh;
@@ -159,7 +175,7 @@ export class Traffic {
     private busy: (e: RoadEdge) => boolean,
     hubSpots: THREE.Vector3[],
     /** Night: whether a spot is under a working lamp; where agberos gather (dark) or loiter (lit). */
-    private night: { isLit: (p: THREE.Vector3) => boolean; dark: THREE.Vector3[]; lit: THREE.Vector3[] } = { isLit: () => true, dark: [], lit: [] },
+    private night: { isLit: (p: THREE.Vector3) => boolean; dark: THREE.Vector3[]; lit: THREE.Vector3[]; resolve?: (p: THREE.Vector3) => void } = { isLit: () => true, dark: [], lit: [] },
     counts = { car: 26, danfo: 10, keke: 12, walkers: 90 },
   ) {
     for (const e of roads.edges) {
@@ -253,8 +269,10 @@ export class Traffic {
       const face = n === 1 ? tangent.clone() : spot.clone().sub(p).normalize();
       this.agberos.push({
         p,
-        up: p.clone().normalize(),
+        home: p.clone(),
         face,
+        state: 'idle',
+        moving: false,
         phase: r.range(0, 6),
         look: { body: r.pick([0x2b2f30, 0x3d4444, 0x5a3d33, 0x45503a, 0x6b2f2a]), head: r.pick(SKIN), hat: r.pick([0xb5302a, 0x161616, 0x161616]), load: 0 },
         // Some are out at dusk, the rest once it's properly dark.
@@ -316,7 +334,8 @@ export class Traffic {
    * visible face of the planet counts as on screen).
    */
   /** obstacle: something traffic queues behind (the player's danfo). */
-  update(dt: number, player: THREE.Vector3 | null, camera: THREE.Camera, obstacle: THREE.Vector3 | null = null, night = 0): void {
+  /** target: the player, if the agberos may go after them (null when settled, riding or on the title). */
+  update(dt: number, player: THREE.Vector3 | null, camera: THREE.Camera, obstacle: THREE.Vector3 | null = null, night = 0, target: THREE.Vector3 | null = null): void {
     this.t += dt;
     this.farClock += dt;
     const farTick = this.farClock >= Traffic.FAR_TICK;
@@ -463,10 +482,20 @@ export class Traffic {
       drawPerson(_m, idl.look, false, idl.p);
     }
     for (const ag of this.agberos) {
-      if (night < ag.appear || !onScreen(ag.p)) continue;
-      const face = ag.face.clone().applyAxisAngle(ag.up, Math.sin(this.t * 1.1 + ag.phase) * 0.35);
-      _x.crossVectors(ag.up, face).normalize();
-      _m.makeBasis(_x, ag.up, face).setPosition(ag.p);
+      if (night < ag.appear) {
+        // Not out yet (or gone home at dawn): back at their spot for next time.
+        ag.p.copy(ag.home);
+        ag.state = 'idle';
+        continue;
+      }
+      if (!onScreen(ag.p)) continue;
+      this.hustle(ag, dt, target);
+      const up = ag.p.clone().normalize();
+      const sway = ag.moving ? 0 : Math.sin(this.t * 1.1 + ag.phase) * 0.35;
+      const face = ag.face.clone().applyAxisAngle(up, sway);
+      _x.crossVectors(up, face).normalize();
+      const at = ag.moving ? ag.p.clone().addScaledVector(up, Math.abs(Math.sin(this.t * 8 + ag.phase)) * 0.07) : ag.p;
+      _m.makeBasis(_x, up, face).setPosition(at);
       drawPerson(_m, ag.look, false, ag.p);
     }
     for (const s of [this.bodies, this.heads, this.hats, this.loads]) {
@@ -475,6 +504,51 @@ export class Traffic {
     }
     this.shadows.draw(shadow);
     this.shadows.commit();
+  }
+
+  /**
+   * Agbero behaviour: come for anyone who walks near their spot, crowd round them, and give up
+   * (with a parting shot) if they get away. They walk slower than the player, so running works.
+   */
+  private hustle(ag: Agbero, dt: number, target: THREE.Vector3 | null): void {
+    const homeD = target ? ag.home.distanceTo(target) : Infinity;
+    if (ag.state === 'idle' && homeD < 7) ag.state = 'approach';
+    if (ag.state === 'approach' && homeD > 13) {
+      ag.state = 'return';
+      this.events.push({ kind: 'gaveUp', at: ag.p.clone() });
+    }
+    if (ag.state === 'approach' && !target) ag.state = 'return';
+    const goal = ag.state === 'approach' ? target! : ag.home;
+    const stop = ag.state === 'approach' ? 1.15 : 0.05;
+    const up = ag.p.clone().normalize();
+    const to = goal.clone().sub(ag.p);
+    to.addScaledVector(up, -to.dot(up));
+    const dist = to.length();
+    ag.moving = false;
+    if (dist > stop) {
+      to.normalize();
+      ag.p.addScaledVector(to, Math.min(dist - stop, (ag.state === 'approach' ? 2.6 : 1.6) * dt)).setLength(R);
+      // Don't all pile onto the same spot.
+      for (const o of this.agberos) {
+        if (o === ag || o.state === 'idle') continue;
+        const d = ag.p.distanceTo(o.p);
+        if (d < 0.75 && d > 1e-4) ag.p.addScaledVector(ag.p.clone().sub(o.p).normalize(), (0.75 - d) * 0.5).setLength(R);
+      }
+      this.night.resolve?.(ag.p);
+      ag.face.copy(to);
+      ag.moving = true;
+    } else if (ag.state === 'return') ag.state = 'idle';
+    if (ag.state === 'approach' && dist <= stop + 0.3) ag.face.copy(to.lengthSq() > 0 ? to.normalize() : ag.face);
+  }
+
+  /** Agberos closing in on the player, within r metres (live positions: read, never write). */
+  agberosNear(p: THREE.Vector3, r: number): THREE.Vector3[] {
+    return this.agberos.filter((a) => a.state === 'approach' && a.p.distanceTo(p) < r).map((a) => a.p);
+  }
+
+  /** Reactions since the last call (each is returned once). */
+  takeEvents(): { kind: 'gaveUp'; at: THREE.Vector3 }[] {
+    return this.events.splice(0);
   }
 
   /**

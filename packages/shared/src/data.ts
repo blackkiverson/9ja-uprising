@@ -59,6 +59,22 @@ export const HIT_MIN_SPEED = 1.5;
 /** Health hits zero: you wake up at the clinic, patched up, with a bill. */
 export const KNOCKOUT = { health: 50, bill: 2500, minutes: 120 };
 
+/**
+ * Agberos at night: pay them off ("settle") and they leave you alone till morning. Get too close
+ * without paying and they either shove you to the ground (health) or go through your pockets.
+ */
+export const AGBERO = { settle: 500, damage: 10, snatch: 800 };
+
+/** What agberos shout. Draft Pidgin: needs a native speaker's pass. */
+export const AGBERO_LINES = {
+  approach: ['Oga mi! Where you dey go?', 'Bros, drop something for the boys', 'Na our area be this o!', 'Chairman, wetin you carry?', 'You no fit pass like that', 'Owo da? Settle us!'],
+  grip: ['Drop something now now!', 'You dey hear me? Bring am!', 'No dey form for us!', 'Shey you wan try us?'],
+  push: ['You think say na joke?', 'Comot for road!', 'Na so we dey do am here!'],
+  rob: ['Oya check im pocket!', 'Bring that thing!', 'Thank you sir!'],
+  settled: ['Correct guy! Waka pass.', 'Baba God bless you!', 'Chairman! Anytime, anytime.'],
+  gaveUp: ['Run! We go see you!', 'You go come back!', 'Coward! Na una dey run.'],
+};
+
 /** Mercy Clinic: pay to get health back. Full treatment takes time (skippable). */
 export type TreatmentId = 'first_aid' | 'full';
 export const CLINIC: Record<TreatmentId, { name: string; heal: number; price: number; minutes: number }> = {
