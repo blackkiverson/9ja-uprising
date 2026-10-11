@@ -368,7 +368,7 @@ renderer.setAnimationLoop(() => {
   // arriving early catches the clock up to the fare's ride time.
   if (rideTo) {
     if (!isBusy()) endRide();
-    else if (ride.update(dt)) {
+    else if (ride.update(dt, ride.boarding ? null : traffic.gapAhead(ride.position, ride.heading))) {
       game.dispatch({ type: 'fast_forward' });
       hud.toast('Owa o! You have arrived.');
       endRide();
@@ -401,7 +401,7 @@ renderer.setAnimationLoop(() => {
   world.update(dt);
   space.update(dt, camera);
   const hostile = playing && !rideTo && !isBusy() && lapse === null && daylight.lamps > 0.3 && !agberosSettled(game.state, game.now());
-  for (let i = 0, n = 1 + Math.round(rush * 4); i < n; i++) traffic.update(dt, playing ? player.ground : null, camera, rideTo ? ride.position : null, daylight.lamps, hostile ? player.ground : null);
+  for (let i = 0, n = 1 + Math.round(rush * 4); i < n; i++) traffic.update(dt, playing ? player.ground : null, camera, rideTo ? { p: ride.position, f: ride.heading } : null, daylight.lamps, hostile ? player.ground : null);
   updateAgberos(dt, hostile);
   bubbles.update(camera);
   smoke.update(dt * (1 + rush * 2), camera, playing ? player.ground : null, traffic.exhausts());

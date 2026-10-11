@@ -85,6 +85,8 @@ export class DanfoRide {
   private s = 0;
   private speed = 0;
   private wait = 0;
+  private stuck = 0;
+  private creep = 0;
   active = false;
 
   constructor(
@@ -115,6 +117,8 @@ export class DanfoRide {
     this.s = 0;
     this.speed = 0;
     this.wait = BOARDING;
+    this.stuck = 0;
+    this.creep = 0;
     this.active = true;
     this.mesh.visible = true;
     this.place();
@@ -134,8 +138,16 @@ export class DanfoRide {
     return this.wait > 0;
   }
 
-  /** Returns true on arrival. */
-  update(dt: number): boolean {
+  /** Heading along the road (unit, tangent). */
+  get heading(): THREE.Vector3 {
+    return new THREE.Vector3(0, 0, 1).applyQuaternion(this.mesh.quaternion);
+  }
+
+  /**
+   * Returns true on arrival. ahead: the vehicle in front in our lane, if any: we queue behind
+   * it like everyone else (go-slow included), only creeping round it if stuck a long time.
+   */
+  update(dt: number, ahead: { dist: number; length: number } | null = null): boolean {
     if (!this.active) return false;
     if (this.wait > 0) {
       this.wait -= dt;
@@ -144,7 +156,19 @@ export class DanfoRide {
     const total = this.arc[this.arc.length - 1]!;
     const left = total - this.s;
     // Ease off into the stop.
-    const target = Math.min(TOP_SPEED, Math.sqrt(2 * ACCEL * Math.max(0, left)) + 0.6);
+    let target = Math.min(TOP_SPEED, Math.sqrt(2 * ACCEL * Math.max(0, left)) + 0.6);
+    if (this.creep > 0) this.creep -= dt;
+    if (ahead && this.creep <= 0) {
+      const safe = 2.5 + ahead.length / 2 + 1.5;
+      if (ahead.dist < safe) target = 0;
+      else if (ahead.dist < safe + 5) target = Math.min(target, (ahead.dist - safe) * 0.9);
+    }
+    // Never sit forever behind something wedged at a junction: after 10 s, edge past for 3 s.
+    this.stuck = target === 0 ? this.stuck + dt : 0;
+    if (this.stuck > 10) {
+      this.creep = 3;
+      this.stuck = 0;
+    }
     this.speed += THREE.MathUtils.clamp(target - this.speed, -ACCEL * 2 * dt, ACCEL * dt);
     this.s = Math.min(total, this.s + this.speed * dt);
     this.place();

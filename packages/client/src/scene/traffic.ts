@@ -73,6 +73,8 @@ const _f = new THREE.Vector3();
 const _p = new THREE.Vector3();
 const _o = new THREE.Object3D();
 const _l = new THREE.Matrix4();
+const _red = new THREE.Color();
+const RED = new THREE.Color(0xe0281c);
 const _t = new THREE.Matrix4();
 
 /** Where each vehicle type's lamps sit (local x offsets, height, front/back z). */
@@ -164,6 +166,8 @@ export class Traffic {
   private agberos: Agbero[] = [];
   /** Things the game reacts to (speech): an agbero giving up the chase. */
   private events: { kind: 'gaveUp'; at: THREE.Vector3 }[] = [];
+  /** Pulsing red rings under agberos who are coming for the player: back off or run. */
+  private threatRings: THREE.InstancedMesh;
   private headGlow: THREE.InstancedMesh;
   private tailGlow: THREE.InstancedMesh;
   private beams: THREE.InstancedMesh;
@@ -221,6 +225,17 @@ export class Traffic {
     // Agberos: groups of two to four at the dark lamps, the odd one at a lit corner.
     for (const spot of night.dark) this.gather(spot, rng.int(2, 4));
     for (const spot of night.lit) this.gather(spot, 1);
+
+    this.threatRings = new THREE.InstancedMesh(
+      new THREE.RingGeometry(0.55, 0.85, 24).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.85, depthWrite: false }),
+      Math.max(1, this.agberos.length),
+    );
+    this.threatRings.frustumCulled = false;
+    this.threatRings.raycast = () => {};
+    this.threatRings.count = 0;
+    this.threatRings.renderOrder = 6;
+    scene.add(this.threatRings);
 
     // People: one instanced body, head, headwear and (for hawkers) a load on the head.
     const people = counts.walkers + hubSpots.length * 3 + this.agberos.length;
@@ -334,8 +349,11 @@ export class Traffic {
    * visible face of the planet counts as on screen).
    */
   /** obstacle: something traffic queues behind (the player's danfo). */
-  /** target: the player, if the agberos may go after them (null when settled, riding or on the title). */
-  update(dt: number, player: THREE.Vector3 | null, camera: THREE.Camera, obstacle: THREE.Vector3 | null = null, night = 0, target: THREE.Vector3 | null = null): void {
+  /**
+   * obstacle: the player's danfo (position and heading), which traffic in its lane queues behind.
+   * target: the player, if the agberos may go after them (null when settled, riding or on the title).
+   */
+  update(dt: number, player: THREE.Vector3 | null, camera: THREE.Camera, obstacle: { p: THREE.Vector3; f: THREE.Vector3 } | null = null, night = 0, target: THREE.Vector3 | null = null): void {
     this.t += dt;
     this.farClock += dt;
     const farTick = this.farClock >= Traffic.FAR_TICK;
@@ -399,8 +417,12 @@ export class Traffic {
       // No braking for the player: in Lagos traffic, you get out of the way. They do queue
       // behind the player's danfo, though.
       if (obstacle) {
-        const ahead = obstacle.clone().sub(here.p).dot(here.t.clone().multiplyScalar(v.dir));
-        if (ahead > 0 && ahead < 7 && obstacle.distanceTo(here.p) < 7.5) gap = Math.min(gap, ahead - 1);
+        // Only if it's in our lane, going our way (oncoming traffic just passes it).
+        const fwd = here.t.clone().multiplyScalar(v.dir);
+        const rel = obstacle.p.clone().sub(v.pos);
+        const ahead = rel.dot(fwd);
+        const lateral = rel.addScaledVector(fwd, -ahead).length();
+        if (ahead > 0 && ahead < 8 && lateral < 1.6 && obstacle.f.dot(fwd) > 0.5) gap = Math.min(gap, ahead - 1);
       }
       const safe = v.length + 1.5;
       if (gap < safe) target = 0;
@@ -481,6 +503,8 @@ export class Traffic {
       _m.makeBasis(_x, idl.up, face).setPosition(idl.p);
       drawPerson(_m, idl.look, false, idl.p);
     }
+    let rings = 0;
+    const pulse = 1 + Math.sin(this.t * 9) * 0.15;
     for (const ag of this.agberos) {
       if (night < ag.appear) {
         // Not out yet (or gone home at dawn): back at their spot for next time.
@@ -496,8 +520,19 @@ export class Traffic {
       _x.crossVectors(up, face).normalize();
       const at = ag.moving ? ag.p.clone().addScaledVector(up, Math.abs(Math.sin(this.t * 8 + ag.phase)) * 0.07) : ag.p;
       _m.makeBasis(_x, up, face).setPosition(at);
-      drawPerson(_m, ag.look, false, ag.p);
+      if (ag.state === 'approach') {
+        // Marked out in red while they're coming for you.
+        _o.position.copy(ag.p).setLength(R + 0.06);
+        _o.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), up);
+        _o.scale.setScalar(pulse);
+        _o.updateMatrix();
+        this.threatRings.setMatrixAt(rings++, _o.matrix);
+        const red = 0.55 + Math.sin(this.t * 9) * 0.2;
+        drawPerson(_m, { ...ag.look, body: _red.setHex(ag.look.body).lerp(RED, red).getHex(), hat: 0xd8261a }, false, ag.p);
+      } else drawPerson(_m, ag.look, false, ag.p);
     }
+    this.threatRings.count = rings;
+    this.threatRings.instanceMatrix.needsUpdate = true;
     for (const s of [this.bodies, this.heads, this.hats, this.loads]) {
       s.draw(n);
       s.commit();
@@ -539,6 +574,23 @@ export class Traffic {
       ag.moving = true;
     } else if (ag.state === 'return') ag.state = 'idle';
     if (ag.state === 'approach' && dist <= stop + 0.3) ag.face.copy(to.lengthSq() > 0 ? to.normalize() : ag.face);
+  }
+
+  /**
+   * Distance (centre to centre) to the nearest vehicle ahead in the same lane, going the same
+   * way, within range; Infinity if the road is clear. For the player's danfo to queue in traffic.
+   */
+  gapAhead(p: THREE.Vector3, f: THREE.Vector3, range = 14): { dist: number; length: number } | null {
+    let best: { dist: number; length: number } | null = null;
+    for (const v of this.vehicles) {
+      if (!v.visible) continue;
+      const rel = v.pos.clone().sub(p);
+      const ahead = rel.dot(f);
+      if (ahead <= 0 || ahead > range || v.fwd.dot(f) < 0.5) continue;
+      if (rel.addScaledVector(f, -ahead).length() > 1.4) continue;
+      if (!best || ahead < best.dist) best = { dist: ahead, length: v.length };
+    }
+    return best;
   }
 
   /** Agberos closing in on the player, within r metres (live positions: read, never write). */
