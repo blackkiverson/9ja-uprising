@@ -1,5 +1,5 @@
 import type { WorldTime } from './clock';
-import { DANFO, FOOD, MAX_ENERGY, OFFICE_SHIFT, type FoodId, type LocationId } from './data';
+import { DANFO, FOOD, HIT_MIN_SPEED, KNOCKOUT, MAX_ENERGY, OFFICE_SHIFT, VEHICLE_HIT, type FoodId, type LocationId, type VehicleKind } from './data';
 import { applyChoice, checkChoice, type NpcId } from './dialogue';
 import type { PlayerState } from './state';
 
@@ -11,10 +11,11 @@ export type Action =
   | { type: 'danfo'; to: LocationId }
   | { type: 'sleep' }
   | { type: 'relationship'; npc: string; delta: number }
-  | { type: 'dialogue'; npc: NpcId; node: string; choice: number };
+  | { type: 'dialogue'; npc: NpcId; node: string; choice: number }
+  | { type: 'hit_by_vehicle'; vehicle: VehicleKind; speed: number };
 
 export type ActionResult =
-  | { ok: true; state: PlayerState; message: string }
+  | { ok: true; state: PlayerState; message: string; knockedOut?: boolean }
   | { ok: false; reason: string };
 
 const fail = (reason: string): ActionResult => ({ ok: false, reason });
@@ -24,6 +25,8 @@ const fail = (reason: string): ActionResult => ({ ok: false, reason });
  * The client calls it in 0.1; the server will call it to validate actions in multiplayer.
  */
 export function applyAction(prev: PlayerState, action: Action, now: WorldTime): ActionResult {
+  // Traffic doesn't wait for you to be free.
+  if (action.type === 'hit_by_vehicle') return hitByVehicle(prev, action.vehicle, action.speed, now);
   if (now.totalMinutes < prev.busyUntil) {
     return fail(`Busy for another ${prev.busyUntil - now.totalMinutes} minutes.`);
   }
@@ -101,4 +104,21 @@ export function applyAction(prev: PlayerState, action: Action, now: WorldTime): 
       return { ok: true, state: s, message: '' };
     }
   }
+}
+
+/** Damage scales with impact speed (capped at the type's top speed); zero health is a knockout. */
+function hitByVehicle(prev: PlayerState, vehicle: VehicleKind, speed: number, now: WorldTime): ActionResult {
+  const hit = VEHICLE_HIT[vehicle];
+  if (!hit || !(speed >= HIT_MIN_SPEED)) return fail('Too slow to hurt.');
+  const s = JSON.parse(JSON.stringify(prev)) as PlayerState;
+  const damage = Math.max(1, Math.round(hit.damage * Math.min(1, speed / hit.topSpeed)));
+  s.health = Math.max(0, s.health - damage);
+  if (s.health > 0) return { ok: true, state: s, message: `${hit.name} no dey stop! -${damage} health` };
+
+  const bill = Math.min(s.money, KNOCKOUT.bill);
+  s.health = KNOCKOUT.health;
+  s.money -= bill;
+  s.location = 'home';
+  s.busyUntil = now.totalMinutes + KNOCKOUT.minutes;
+  return { ok: true, state: s, message: `Knocked down by a ${hit.name.toLowerCase()}. You wake up at home. -₦${bill.toLocaleString()}`, knockedOut: true };
 }

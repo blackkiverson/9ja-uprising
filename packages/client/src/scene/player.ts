@@ -85,9 +85,10 @@ export class PlayerAvatar {
   }
 
   /** Lets something solid that moves (a car) shove the player aside. */
-  push(fn: (pos: THREE.Vector3) => void): void {
-    fn(this.pos);
+  push<T>(fn: (pos: THREE.Vector3) => T): T {
+    const out = fn(this.pos);
     this.syncRoot();
+    return out;
   }
 
   /** Turn the head marker to face the camera so the chevron is always seen flat on. */

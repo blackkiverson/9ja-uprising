@@ -301,10 +301,7 @@ export class Traffic {
         }
       }
       const here = this.roads.at(v.edge, v.s);
-      if (player) {
-        const ahead = player.clone().sub(here.p).dot(here.t.clone().multiplyScalar(v.dir));
-        if (ahead > 0 && ahead < 6 && player.distanceTo(here.p) < 6.5) gap = Math.min(gap, ahead);
-      }
+      // No braking for the player: in Lagos traffic, you get out of the way.
       const safe = v.length + 1.5;
       if (gap < safe) target = 0;
       else if (gap < safe + 5) target = Math.min(target, (gap - safe) * 0.9);
@@ -379,14 +376,28 @@ export class Traffic {
     return out;
   }
 
-  /** Keeps the player from walking through vehicles. Mutates p. */
-  pushOut(p: THREE.Vector3): void {
+  /**
+   * Keeps the player from walking through vehicles. Mutates p. Returns the fastest vehicle that
+   * struck the player this frame (for damage), throwing them clear along its path.
+   */
+  pushOut(p: THREE.Vector3): { vehicle: VehicleType; speed: number } | null {
+    let hit: { vehicle: VehicleType; speed: number } | null = null;
+    const len = p.length();
     for (const v of this.vehicles) {
       const vp = v.pos;
       if (vp.distanceToSquared(p) > 25) continue;
       const d = p.distanceTo(vp);
       const r = v.type === 'keke' ? 1.3 : 2.2;
-      if (d < r && d > 1e-4) p.addScaledVector(p.clone().sub(vp).normalize(), r - d).setLength(p.length());
+      if (d >= r || d < 1e-4) continue;
+      const away = p.clone().sub(vp).normalize();
+      p.addScaledVector(away, r - d);
+      if (v.speed > 1.5) {
+        // Thrown forward and to the side, harder the faster it was going.
+        p.addScaledVector(away, 0.12 * v.speed).addScaledVector(v.fwd, 0.1 * v.speed);
+        if (!hit || v.speed > hit.speed) hit = { vehicle: v.type, speed: v.speed };
+      }
+      p.setLength(len);
     }
+    return hit;
   }
 }

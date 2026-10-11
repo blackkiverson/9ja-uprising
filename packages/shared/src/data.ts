@@ -36,5 +36,17 @@ export const DANFO = {
   durationMinutes: 45,
 };
 
+// Nobody brakes for pedestrians. Damage at full speed; slower hits scale down.
+export type VehicleKind = 'car' | 'danfo' | 'keke';
+export const VEHICLE_HIT: Record<VehicleKind, { name: string; damage: number; topSpeed: number }> = {
+  keke: { name: 'Keke', damage: 12, topSpeed: 5.5 },
+  car: { name: 'Car', damage: 20, topSpeed: 8.5 },
+  danfo: { name: 'Danfo', damage: 28, topSpeed: 7 },
+};
+/** Below this speed (m/s) a vehicle only shoves you aside. */
+export const HIT_MIN_SPEED = 1.5;
+/** Health hits zero: you wake up at home, patched up, with a bill. */
+export const KNOCKOUT = { health: 50, bill: 2500, minutes: 120 };
+
 export const STARTING_MONEY = 10000;
 export const MAX_ENERGY = 100;

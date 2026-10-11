@@ -184,6 +184,28 @@ if (import.meta.env.DEV) Object.assign(window, { __9ja: { game, player, places, 
 
 const clock = new THREE.Clock();
 const walk = new THREE.Vector3();
+let hitCooldown = 0;
+let hurtTimer = 0;
+
+/** A vehicle struck the player: damage through the shared rules, a hop, a red flash. */
+const onStruck = (vehicle: 'car' | 'danfo' | 'keke', speed: number) => {
+  const r = game.dispatch({ type: 'hit_by_vehicle', vehicle, speed });
+  if (!r.ok) return;
+  hitCooldown = 1.2;
+  player.followPath([]);
+  player.jump();
+  hud.toast(r.message);
+  document.body.classList.remove('hurt');
+  void document.body.offsetWidth; // restart the flash animation
+  document.body.classList.add('hurt');
+  clearTimeout(hurtTimer);
+  hurtTimer = window.setTimeout(() => document.body.classList.remove('hurt'), 700);
+  if (r.knockedOut) {
+    dialogue.close();
+    teleportTo(placeById('home').door);
+    rig.update(player.ground, 0, true);
+  }
+};
 
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
@@ -195,7 +217,14 @@ renderer.setAnimationLoop(() => {
   const input = busy ? new THREE.Vector2() : keyboard.direction();
   walk.set(0, 0, 0).addScaledVector(rig.right, input.x).addScaledVector(rig.forward, -input.y);
   player.update(dt, walk, world.collisions, world.heightAt);
-  player.push((p) => traffic.pushOut(p));
+  hitCooldown = Math.max(0, hitCooldown - dt);
+  const struck = player.push((p) => {
+    const hit = traffic.pushOut(p);
+    // Thrown clear, but never into a wall.
+    if (hit) world.collisions.resolve(p);
+    return hit;
+  });
+  if (struck && playing && hitCooldown === 0) onStruck(struck.vehicle, struck.speed);
 
   const near = playing ? nearestPlace() : null;
   if (near && near.id !== game.state.location) game.dispatch({ type: 'enter', location: near.id });

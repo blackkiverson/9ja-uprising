@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyAction } from './actions';
 import { MINUTES_PER_DAY, type WorldTime } from './clock';
-import { DANFO, FOOD, OFFICE_SHIFT, STARTING_MONEY } from './data';
+import { DANFO, FOOD, KNOCKOUT, OFFICE_SHIFT, STARTING_MONEY, VEHICLE_HIT } from './data';
 import { createPlayer, type PlayerState } from './state';
 
 const at = (day: number, minuteOfDay: number): WorldTime => ({
@@ -60,5 +60,25 @@ describe('applyAction', () => {
     applyAction(p, { type: 'buy_food', item: 'gala' }, at(1, 600));
     expect(p.money).toBe(STARTING_MONEY);
     expect(p.inventory).toEqual({});
+  });
+
+  it('takes health when hit by a vehicle, more at speed, even while busy', () => {
+    const p = { ...createPlayer(), busyUntil: at(1, 700).totalMinutes };
+    const fast = ok(applyAction(p, { type: 'hit_by_vehicle', vehicle: 'danfo', speed: 20 }, at(1, 600)));
+    expect(fast.health).toBe(100 - VEHICLE_HIT.danfo.damage);
+    const slow = ok(applyAction(p, { type: 'hit_by_vehicle', vehicle: 'danfo', speed: VEHICLE_HIT.danfo.topSpeed / 2 }, at(1, 600)));
+    expect(slow.health).toBe(100 - VEHICLE_HIT.danfo.damage / 2);
+    expect(applyAction(p, { type: 'hit_by_vehicle', vehicle: 'car', speed: 0.5 }, at(1, 600)).ok).toBe(false);
+  });
+
+  it('knocks you out at zero health: home, patched up, billed', () => {
+    const p = { ...createPlayer(), health: 5, location: 'office' as const };
+    const r = applyAction(p, { type: 'hit_by_vehicle', vehicle: 'car', speed: 8 }, at(1, 600));
+    expect(r.ok && r.knockedOut).toBe(true);
+    const after = ok(r);
+    expect(after.health).toBe(KNOCKOUT.health);
+    expect(after.location).toBe('home');
+    expect(after.money).toBe(STARTING_MONEY - KNOCKOUT.bill);
+    expect(after.busyUntil).toBe(at(1, 600).totalMinutes + KNOCKOUT.minutes);
   });
 });

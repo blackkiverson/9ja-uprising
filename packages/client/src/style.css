@@ -120,3 +120,11 @@ body:not(.playing) #exit { display: none; }
 }
 #money .naira { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-weight: 900; margin-right: 2px; }
 #now-playing { max-width: calc(50vw - 40px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Struck by traffic: a red edge flash and the health bar shakes. */
+body::after { content: ''; position: fixed; inset: 0; pointer-events: none; opacity: 0;
+  box-shadow: inset 0 0 120px 30px rgba(192, 40, 30, 0.75); }
+body.hurt::after { animation: hurt-flash 0.7s ease-out; }
+body.hurt .bar.health { animation: hurt-shake 0.4s; }
+@keyframes hurt-flash { 0% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes hurt-shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
