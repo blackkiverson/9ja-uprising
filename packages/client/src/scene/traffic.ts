@@ -4,6 +4,7 @@ import { danfoKit, kekeKit } from './kits';
 import type { RoadEdge, RoadNetwork } from './roads';
 import type { Rng } from './rng';
 import { R } from './sphere';
+import { glowMaterial, poolGeometry } from './nightlights';
 import { hullGeometry, outlineMaterial, toonMaterial } from './toon';
 
 type VehicleType = 'car' | 'danfo' | 'keke';
@@ -30,6 +31,8 @@ interface Vehicle extends Agent {
   smoky: boolean;
   /** Drawn this frame. */
   visible: boolean;
+  /** Working headlights/tail lights, left and right (plenty of drivers run with one, or none). */
+  lights: [boolean, boolean];
 }
 
 interface Walker extends Agent {
@@ -39,6 +42,8 @@ interface Walker extends Agent {
   phase: number;
   load: boolean;
   look: Look;
+  /** Stays out after dark if above the night's cut (lower means home earlier). */
+  owl: number;
 }
 
 interface Look {
@@ -53,6 +58,15 @@ const _x = new THREE.Vector3();
 const _f = new THREE.Vector3();
 const _p = new THREE.Vector3();
 const _o = new THREE.Object3D();
+const _l = new THREE.Matrix4();
+const _t = new THREE.Matrix4();
+
+/** Where each vehicle type's lamps sit (local x offsets, height, front/back z). */
+const LIGHTS: Record<VehicleType, { front: number[]; fy: number; fz: number; rear: number[]; ry: number; rz: number }> = {
+  car: { front: [-0.6, 0.6], fy: 0.6, fz: 2.04, rear: [-0.6, 0.6], ry: 0.7, rz: -2.03 },
+  danfo: { front: [-0.75, 0.75], fy: 0.95, fz: 2.43, rear: [-0.8, 0.8], ry: 1, rz: -2.43 },
+  keke: { front: [0], fy: 1, fz: 1.12, rear: [-0.5, 0.5], ry: 0.9, rz: -1.12 },
+};
 
 function carKit(): Kit {
   const k = new Kit();
@@ -132,6 +146,11 @@ export class Traffic {
   private loads: Instances;
   private shadows: Instances;
   private t = 0;
+  /** Touts who come out after dark, mostly round the dead street lamps. */
+  private agberos: { p: THREE.Vector3; up: THREE.Vector3; face: THREE.Vector3; phase: number; look: Look; appear: number }[] = [];
+  private headGlow: THREE.InstancedMesh;
+  private tailGlow: THREE.InstancedMesh;
+  private beams: THREE.InstancedMesh;
 
   constructor(
     scene: THREE.Scene,
@@ -139,6 +158,8 @@ export class Traffic {
     private rng: Rng,
     private busy: (e: RoadEdge) => boolean,
     hubSpots: THREE.Vector3[],
+    /** Night: whether a spot is under a working lamp; where agberos gather (dark) or loiter (lit). */
+    private night: { isLit: (p: THREE.Vector3) => boolean; dark: THREE.Vector3[]; lit: THREE.Vector3[] } = { isLit: () => true, dark: [], lit: [] },
     counts = { car: 26, danfo: 10, keke: 12, walkers: 90 },
   ) {
     for (const e of roads.edges) {
@@ -158,15 +179,35 @@ export class Traffic {
       for (let i = 0; i < counts[type]; i++) {
         const edge = spawnEdge();
         const maxSpeed = type === 'keke' ? rng.range(4, 5.5) : type === 'danfo' ? rng.range(5, 7) : rng.range(6, 8.5);
-        const v: Vehicle = { edge, s: rng.range(0, roads.length(edge)), dir: rng.chance(0.5) ? 1 : -1, speed: 0, type, index: i, maxSpeed, length: type === 'keke' ? 2.4 : type === 'danfo' ? 5 : 4.2, pos: new THREE.Vector3(), color: type === 'car' ? rng.pick(CAR_PAINT) : 0xffffff, fwd: new THREE.Vector3(), smoky: type === 'danfo' || (type === 'keke' ? rng.chance(0.6) : rng.chance(0.33)), visible: false };
+        const v: Vehicle = { edge, s: rng.range(0, roads.length(edge)), dir: rng.chance(0.5) ? 1 : -1, speed: 0, type, index: i, maxSpeed, length: type === 'keke' ? 2.4 : type === 'danfo' ? 5 : 4.2, pos: new THREE.Vector3(), color: type === 'car' ? rng.pick(CAR_PAINT) : 0xffffff, fwd: new THREE.Vector3(), smoky: type === 'danfo' || (type === 'keke' ? rng.chance(0.6) : rng.chance(0.33)), visible: false, lights: this.brokenLights() };
         v.pos.copy(roads.at(edge, v.s).p);
         this.vehicles.push(v);
         this.sets[type].color(i, v.color);
       }
     }
 
+    // Headlights, tail lights and the light the headlights throw on the road.
+    const lightCount = this.vehicles.length * 2;
+    const lightMesh = (geo: THREE.BufferGeometry, mat: THREE.Material) => {
+      const m = new THREE.InstancedMesh(geo, mat, lightCount);
+      m.frustumCulled = false;
+      m.raycast = () => {};
+      m.count = 0;
+      for (let i = 0; i < lightCount; i++) m.setColorAt(i, new THREE.Color(0xffffff));
+      scene.add(m);
+      return m;
+    };
+    this.headGlow = lightMesh(new THREE.BoxGeometry(0.3, 0.16, 0.05), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    this.tailGlow = lightMesh(new THREE.BoxGeometry(0.26, 0.14, 0.05), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    this.beams = lightMesh(poolGeometry(2.4, 7, 0, 4.4, 0.06), glowMaterial());
+    this.beams.renderOrder = 4;
+
+    // Agberos: groups of two to four at the dark lamps, the odd one at a lit corner.
+    for (const spot of night.dark) this.gather(spot, rng.int(2, 4));
+    for (const spot of night.lit) this.gather(spot, 1);
+
     // People: one instanced body, head, headwear and (for hawkers) a load on the head.
-    const people = counts.walkers + hubSpots.length * 3;
+    const people = counts.walkers + hubSpots.length * 3 + this.agberos.length;
     this.bodies = new Instances(scene, new THREE.CapsuleGeometry(0.32, 0.8, 3, 8).translate(0, 0.72, 0), people, { outline: 0.03 });
     this.heads = new Instances(scene, new THREE.SphereGeometry(0.27, 10, 8).translate(0, 1.55, 0), people, { outline: 0.03 });
     this.hats = new Instances(scene, new THREE.SphereGeometry(0.3, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(1.05, 0.8, 1.05).translate(0, 1.62, 0), people);
@@ -176,7 +217,7 @@ export class Traffic {
     });
     for (let i = 0; i < counts.walkers; i++) {
       const edge = rng.chance(0.4) && busyEdges.length ? rng.pick(busyEdges) : rng.pick(roads.edges);
-      this.walkers.push({ edge, s: rng.range(0, roads.length(edge)), dir: rng.chance(0.5) ? 1 : -1, speed: rng.range(1, 1.6), side: rng.chance(0.5) ? 1 : -1, idle: 0, phase: rng.range(0, 6), load: rng.chance(0.2), look: this.look() });
+      this.walkers.push({ edge, s: rng.range(0, roads.length(edge)), dir: rng.chance(0.5) ? 1 : -1, speed: rng.range(1, 1.6), side: rng.chance(0.5) ? 1 : -1, idle: 0, phase: rng.range(0, 6), load: rng.chance(0.2), look: this.look(), owl: rng.next() });
     }
     // Small groups hanging about at the hub places.
     for (const spot of hubSpots) {
@@ -191,6 +232,35 @@ export class Traffic {
     }
     // Prime the colour buffers so they exist before the first frame.
     for (let i = 0; i < people; i++) for (const s of [this.bodies, this.heads, this.hats, this.loads]) s.color(i, 0xffffff);
+  }
+
+  /** Most drivers have both lights; plenty run with one, some with none. */
+  private brokenLights(): [boolean, boolean] {
+    const r = this.rng.next();
+    return r < 0.72 ? [true, true] : r < 0.8 ? [true, false] : r < 0.88 ? [false, true] : [false, false];
+  }
+
+  /** A loose ring of agberos round a spot, facing in. */
+  private gather(spot: THREE.Vector3, n: number): void {
+    const r = this.rng;
+    const up = spot.clone().normalize();
+    const tangent = new THREE.Vector3(1, 0, 0).addScaledVector(up, -up.x).normalize();
+    const other = tangent.clone().cross(up);
+    for (let j = 0; j < n; j++) {
+      const a = (j / n) * Math.PI * 2 + r.range(-0.4, 0.4);
+      const rad = n === 1 ? 0 : r.range(0.8, 1.3);
+      const p = spot.clone().addScaledVector(tangent, Math.cos(a) * rad).addScaledVector(other, Math.sin(a) * rad).setLength(R);
+      const face = n === 1 ? tangent.clone() : spot.clone().sub(p).normalize();
+      this.agberos.push({
+        p,
+        up: p.clone().normalize(),
+        face,
+        phase: r.range(0, 6),
+        look: { body: r.pick([0x2b2f30, 0x3d4444, 0x5a3d33, 0x45503a, 0x6b2f2a]), head: r.pick(SKIN), hat: r.pick([0xb5302a, 0x161616, 0x161616]), load: 0 },
+        // Some are out at dusk, the rest once it's properly dark.
+        appear: r.range(0.35, 0.8),
+      });
+    }
   }
 
   private look(): Look {
@@ -246,7 +316,7 @@ export class Traffic {
    * visible face of the planet counts as on screen).
    */
   /** obstacle: something traffic queues behind (the player's danfo). */
-  update(dt: number, player: THREE.Vector3 | null, camera: THREE.Camera, obstacle: THREE.Vector3 | null = null): void {
+  update(dt: number, player: THREE.Vector3 | null, camera: THREE.Camera, obstacle: THREE.Vector3 | null = null, night = 0): void {
     this.t += dt;
     this.farClock += dt;
     const farTick = this.farClock >= Traffic.FAR_TICK;
@@ -269,6 +339,11 @@ export class Traffic {
 
     // --- Vehicles ---
     const slots: Record<VehicleType, number> = { car: 0, danfo: 0, keke: 0 };
+    let heads = 0;
+    let tails = 0;
+    const headC = new THREE.Color(0x9a9a8e).lerp(new THREE.Color(0xfff6dc), night);
+    const tailC = new THREE.Color(0x6a1a16).lerp(new THREE.Color(0xff3b2f), night);
+    const beamC = new THREE.Color(0xfff0c8).multiplyScalar(0.45 * night);
     for (const v of this.vehicles) {
       const visible = onScreen(v.pos);
       v.visible = visible;
@@ -320,6 +395,29 @@ export class Traffic {
       this.sets[v.type].set(slot, _m);
       this.sets[v.type].color(slot, v.color);
       placeShadow(p, v.type === 'keke' ? 1.2 : 2.3);
+      if (night > 0.03) {
+        const L = LIGHTS[v.type];
+        L.front.forEach((x, i) => {
+          // A keke's one lamp counts as its left.
+          if (!v.lights[L.front.length === 1 ? 0 : i]) return;
+          this.headGlow.setMatrixAt(heads, _l.copy(_m).multiply(_t.makeTranslation(x, L.fy, L.fz)));
+          this.headGlow.setColorAt(heads, headC);
+          this.beams.setMatrixAt(heads, _l.copy(_m).multiply(_t.makeTranslation(x * 0.6, 0, 0)));
+          this.beams.setColorAt(heads, beamC);
+          heads++;
+        });
+        L.rear.forEach((x, i) => {
+          if (!v.lights[i]) return;
+          this.tailGlow.setMatrixAt(tails, _l.copy(_m).multiply(_t.makeTranslation(x, L.ry, L.rz)));
+          this.tailGlow.setColorAt(tails++, tailC);
+        });
+      }
+    }
+    this.headGlow.count = this.beams.count = heads;
+    this.tailGlow.count = tails;
+    for (const m of [this.headGlow, this.beams, this.tailGlow]) {
+      m.instanceMatrix.needsUpdate = true;
+      if (m.instanceColor) m.instanceColor.needsUpdate = true;
     }
     for (const type of ['car', 'danfo', 'keke'] as const) {
       this.sets[type].draw(slots[type]);
@@ -354,14 +452,22 @@ export class Traffic {
       }
       const offset = w.side * (w.edge.width / 2 + Math.max(0.6, w.edge.shoulder * 0.55));
       const p = this.pose(w, offset, _m, w.idle > 0 ? 0 : Math.abs(Math.sin(this.t * 7 + w.phase)) * 0.06);
+      if (!this.outAtNight(w.owl, p, night)) continue;
       drawPerson(_m, w.look, w.load, p);
     }
-    for (const idl of this.idlers) {
-      if (!onScreen(idl.p)) continue;
+    for (const [i, idl] of this.idlers.entries()) {
+      if (!onScreen(idl.p) || !this.outAtNight((i * 0.618) % 1, idl.p, night)) continue;
       const face = idl.face.clone().applyAxisAngle(idl.up, Math.sin(this.t * 1.5 + idl.phase) * 0.15);
       _x.crossVectors(idl.up, face).normalize();
       _m.makeBasis(_x, idl.up, face).setPosition(idl.p);
       drawPerson(_m, idl.look, false, idl.p);
+    }
+    for (const ag of this.agberos) {
+      if (night < ag.appear || !onScreen(ag.p)) continue;
+      const face = ag.face.clone().applyAxisAngle(ag.up, Math.sin(this.t * 1.1 + ag.phase) * 0.35);
+      _x.crossVectors(ag.up, face).normalize();
+      _m.makeBasis(_x, ag.up, face).setPosition(ag.p);
+      drawPerson(_m, ag.look, false, ag.p);
     }
     for (const s of [this.bodies, this.heads, this.hats, this.loads]) {
       s.draw(n);
@@ -369,6 +475,15 @@ export class Traffic {
     }
     this.shadows.draw(shadow);
     this.shadows.commit();
+  }
+
+  /**
+   * After dark most people head home: under working lamps about half stay out, in the dark
+   * almost nobody does (that's where the agberos are).
+   */
+  private outAtNight(owl: number, p: THREE.Vector3, night: number): boolean {
+    if (night <= 0.05) return true;
+    return owl < 1 - night * (this.night.isLit(p) ? 0.5 : 0.88);
   }
 
   /** Exhaust points of visible, smoky vehicles that are moving (rear, just above the road). */

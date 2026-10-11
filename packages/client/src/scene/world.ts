@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { LocationId, NpcId } from '@9ja/shared';
 import { Collisions, Footprints } from './collision';
-import { Kit, box } from './kit';
+import { Kit, box, cyl } from './kit';
 import {
   GATES,
   KIOSKS,
@@ -26,6 +26,7 @@ import {
 } from './kits';
 import { RoadNetwork, facing, loopEdge, mainLoop, type RoadEdge } from './roads';
 import { Rng } from './rng';
+import { StreetLights, glowWindows, type Lamp } from './nightlights';
 import { SIGN, SIGN_COUNT, Signs } from './signs';
 import { Frame, POLE_Z, R, chartOf } from './sphere';
 import { Terrain, archGeometry, bendGeometry, outcropKit } from './terrain';
@@ -48,6 +49,8 @@ export interface World {
   /** Lights that follow the player so the area around them is always lit the same way. */
   hemi: THREE.HemisphereLight;
   sun: THREE.DirectionalLight;
+  /** Street lamps (some dead, some flickering) and the safe/unsafe split they make at night. */
+  lights: StreetLights;
   /** Buildings the player spends time inside (walking about while busy). */
   interiors: Record<'office', { frame: Frame; w: number; d: number; mesh: THREE.Mesh }>;
   /** Where each NPC stands (they face the player when near). */
@@ -225,6 +228,22 @@ function subFrame(parent: Frame, x: number, z: number): Frame {
 
 export function buildWorld(scene: THREE.Scene): World {
   const rng = new Rng(WORLD_SEED);
+  // Own stream for power and lamps, so lighting choices never reshuffle the layout.
+  const lightRng = new Rng(WORLD_SEED + 7);
+  /** Blackout patches: whole areas where NEPA has taken light. */
+  const blackout = (p: THREE.Vector3) => noise(p.clone().multiplyScalar(1.3).addScalar(7)) < -0.15;
+  /** Unsafe patches: most street lamps here are dead. */
+  const unsafeAt = (p: THREE.Vector3) => noise(p.clone().multiplyScalar(1.7).addScalar(31)) < -0.1;
+  const lamps: Lamp[] = [];
+  const lampState = (p: THREE.Vector3): Lamp['state'] => {
+    const r = lightRng.next();
+    return unsafeAt(p) ? (r < 0.75 ? 'off' : r < 0.9 ? 'flicker' : 'on') : r < 0.82 ? 'on' : r < 0.92 ? 'flicker' : 'off';
+  };
+  /** A lamp on a post in frame f (+z faces the road): head at (0, y, arm), light falling at (0, 0, reach). */
+  const addLamp = (f: Frame, y: number, arm: number, reach: number) => {
+    const poolAt = f.toWorld(0, 0, reach);
+    lamps.push({ head: f.matrix(0, y, arm), poolAt, pool: Frame.fromPoint(poolAt).matrix(), base: f.toWorld(0, 0, -1.3), state: lampState(f.c), phase: lightRng.range(0, 20) });
+  };
   const collisions = new Collisions();
   const terrain = new Terrain();
   const veg = new Vegetation(rng, collisions, (p) => terrain.heightAt(p));
@@ -455,6 +474,9 @@ export function buildWorld(scene: THREE.Scene): World {
     const { geometry, bounds } = kit.bend(f);
     const mesh = outlinedMesh(geometry, 0.05);
     mesh.userData = { frame: f, bounds };
+    // Light at night, if there's power: blackout patches are mostly dark; bulbs warm or fluorescent.
+    const powered = blackout(f.c) ? lightRng.chance(0.15) : lightRng.chance(0.85);
+    glowWindows(mesh.material as THREE.MeshToonMaterial, powered, lightRng.chance(0.6) ? 0xffc46e : 0xdff3ff);
     scene.add(mesh);
     occluders.push(mesh);
     collisions.rect(f, w, d);
@@ -922,6 +944,9 @@ export function buildWorld(scene: THREE.Scene): World {
         continue;
       }
       prop(poleKit(), f);
+      // A street lamp on an arm out over the road.
+      prop(new Kit().add(box(0.08, 0.08, 1.9), 0x5f5550, [0, 6, 0.95]), f);
+      addLamp(f, 5.9, 1.85, 3.4);
       collisions.circle(f.c, 0.3);
       footprints.add(f, 1, 1);
       if (prev && ss - prev.s < 22) {
@@ -940,6 +965,27 @@ export function buildWorld(scene: THREE.Scene): World {
       prev = { f, s: ss };
     }
   }
+  // --- Street lamps along the other streets (none out in the bush). ---
+  {
+    const doors = [...gates, ...places.map((pl) => pl.door)];
+    for (const e of roads.edges) {
+      if (e.kind === 'main') continue;
+      const len = roads.length(e);
+      let side: 1 | -1 = lightRng.chance(0.5) ? 1 : -1;
+      for (let s = 4; s < len - 4; s += 11) {
+        side = side === 1 ? -1 : 1;
+        const f = roads.roadside(e, s, side, e.width / 2 + e.shoulder + 0.5);
+        // The road test pads by half a sample step; a post just past the shoulder is fine.
+        if (zoneOf(f.c) === 'green' || footprints.contains(f.c, 0.15) || roads.near(f.c, -0.35) || onRiver(f.c, 0.6) || nearJunction(f.c, 1) || doors.some((d) => d.distanceTo(f.c) < 2.5)) continue;
+        prop(new Kit().add(cyl(0.07, 0.09, 4.6, 6), 0x5f5550, [0, 2.3, 0]).add(box(0.07, 0.07, 1.3), 0x5f5550, [0, 4.5, 0.6]), f);
+        addLamp(f, 4.42, 1.2, 2.4);
+        collisions.circle(f.c, 0.15);
+        footprints.add(f, 0.8, 0.8);
+      }
+    }
+  }
+  const lights = new StreetLights(scene, lamps);
+
   const wires = new THREE.LineSegments(
     new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(wirePoints, 3)),
     new THREE.LineBasicMaterial({ color: 0x283130 }),
@@ -1144,5 +1190,5 @@ export function buildWorld(scene: THREE.Scene): World {
   };
 
   const interiors = { office: { frame: office, w: 10, d: 8, mesh: officeMesh } };
-  return { ground, places, occluders, collisions, hemi, sun, npcSpots, roads, update, heightAt: (p) => terrain.heightAt(p), smokeSpots, interiors };
+  return { ground, places, occluders, collisions, hemi, sun, npcSpots, roads, update, heightAt: (p) => terrain.heightAt(p), smokeSpots, interiors, lights };
 }

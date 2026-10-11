@@ -12,6 +12,7 @@ import { Clouds } from './scene/clouds';
 import { Collisions } from './scene/collision';
 import { Daylight } from './scene/daylight';
 import { DanfoRide } from './scene/ride';
+import { windowNight } from './scene/nightlights';
 import { Npcs } from './scene/npcs';
 import { Smoke } from './scene/smoke';
 import { Space } from './scene/space';
@@ -136,7 +137,15 @@ const busy = (e: (typeof world.roads.edges)[number]) => {
 };
 const smoke = new Smoke(scene);
 for (const s of world.smokeSpots) smoke.addSource(s.p, s.kind);
-const traffic = new Traffic(scene, world.roads, new Rng(77), busy, [placeById('food_stall').door, placeById('bus_stop').door, placeById('market').door]);
+// At night agberos gather at the dead lamps in unsafe patches (a few at lit corners too).
+const lampRng = new Rng(91);
+const deadLamps = world.lights.lamps.filter((l) => l.state === 'off');
+const litLamps = world.lights.lamps.filter((l) => l.state === 'on');
+const traffic = new Traffic(scene, world.roads, new Rng(77), busy, [placeById('food_stall').door, placeById('bus_stop').door, placeById('market').door], {
+  isLit: (p) => world.lights.isLit(p),
+  dark: deadLamps.filter(() => lampRng.chance(0.7)).map((l) => l.base),
+  lit: litLamps.filter(() => lampRng.chance(0.2)).map((l) => l.base),
+});
 const intro = new Intro();
 const introEl = document.getElementById('intro')!;
 const startGame = () => {
@@ -335,7 +344,7 @@ renderer.setAnimationLoop(() => {
   npcs.update(clock.elapsedTime, dt, playing ? ground : null, camera, !dialogue.isOpen);
   world.update(dt);
   space.update(dt, camera);
-  for (let i = 0, n = 1 + Math.round(rush * 4); i < n; i++) traffic.update(dt, playing ? player.ground : null, camera, rideTo ? ride.position : null);
+  for (let i = 0, n = 1 + Math.round(rush * 4); i < n; i++) traffic.update(dt, playing ? player.ground : null, camera, rideTo ? ride.position : null, daylight.lamps);
   smoke.update(dt * (1 + rush * 2), camera, playing ? player.ground : null, traffic.exhausts());
   moveMarker.update(dt);
   player.setMarkerVisible(playing && !rideTo);
@@ -347,6 +356,8 @@ renderer.setAnimationLoop(() => {
   const minute = shownMinute();
   daylight.update(minute, anchor, rig.right, rig.forward);
   space.setTones(daylight.rock, daylight.speck, daylight.haze);
+  world.lights.update(clock.elapsedTime, daylight.lamps);
+  windowNight.value = daylight.lamps;
 
   document.body.classList.toggle('playing', playing);
   document.body.classList.toggle('talking', dialogue.isOpen);
