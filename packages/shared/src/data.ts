@@ -83,6 +83,14 @@ export const CLINIC: Record<TreatmentId, { name: string; heal: number; price: nu
   full: { name: 'Full treatment', heal: 100, price: 70, minutes: 60 },
 };
 
+/** Skipping time you're busy for costs money: per started hour skipped, with a floor. */
+export const FAST_FORWARD = { perHour: 300, min: 100 };
+
+/** Price to skip the rest of whatever you're busy with. */
+export function skipPrice(minutesLeft: number): number {
+  return Math.max(FAST_FORWARD.min, Math.ceil(minutesLeft / 60) * FAST_FORWARD.perHour);
+}
+
 /** Sleep: allowed in the evening or when exhausted, and you wake at this minute of the day. */
 export const SLEEP = { from: 19 * 60, until: 5 * 60, tiredBelow: 40, wakeAt: 6 * 60 + 30 };
 

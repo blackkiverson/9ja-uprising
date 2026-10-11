@@ -183,3 +183,12 @@ body:not(.playing) #tip { display: none; }
 @keyframes loss-in { from { transform: translateX(-12px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes loss-out { to { transform: translateX(-12px); opacity: 0; } }
 @media (max-width: 420px) { #losses { top: 112px; } }
+
+/* Recovering in the clinic: a pie over the building fills until you're ready. */
+#clinic-pie { position: fixed; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
+#clinic-pie[hidden] { display: none; }
+body:not(.playing) #clinic-pie { display: none; }
+#clinic-pie .pie { --p: 0; width: 58px; height: 58px; border-radius: 50%; border: 3px solid var(--ink); box-shadow: 0 3px 0 var(--ink);
+  background: conic-gradient(#4f8f5a calc(var(--p) * 1turn), var(--paper) 0); }
+#clinic-pie span { padding: 2px 8px; border: 2px solid var(--ink); border-radius: 8px; background: var(--paper);
+  font-size: 12px; font-weight: 800; white-space: nowrap; }

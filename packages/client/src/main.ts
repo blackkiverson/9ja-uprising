@@ -1,6 +1,6 @@
 import '@fontsource/bungee';
 import * as THREE from 'three';
-import { AGBERO, AGBERO_LINES, DANFO_ROUTES, agberosSettled } from '@9ja/shared';
+import { AGBERO, AGBERO_LINES, CLINIC, DANFO_ROUTES, KNOCKOUT, agberosSettled, formatClock } from '@9ja/shared';
 import { Bubbles } from './bubbles';
 import { Tips, type TipId } from './tips';
 import { Game } from './game';
@@ -258,6 +258,42 @@ let inOffice = false;
 let deskPause = 0;
 const atWork = () => game.state.busyWith === 'work' && game.state.location === 'office' && isBusy();
 
+// --- Recovering at the clinic: you're inside (hidden), the building glows in and out, and a
+// pie over it fills until you're discharged. ---
+const clinic = world.interiors.clinic;
+const clinicMat = clinic.mesh.material as THREE.MeshToonMaterial;
+const pieEl = document.getElementById('clinic-pie')!;
+const pieFill = pieEl.querySelector('.pie') as HTMLElement;
+const pieLabel = pieEl.querySelector('span')!;
+let clinicStay: { from: number; until: number } | null = null;
+const recovering = () => (game.state.busyWith === 'recovering' || game.state.busyWith === 'treatment') && game.state.location === 'clinic' && isBusy();
+function updateClinic(playing: boolean, minute: number, t: number): void {
+  if (playing && recovering()) {
+    const minutes = game.state.busyWith === 'recovering' ? KNOCKOUT.minutes : CLINIC.full.minutes;
+    clinicStay ??= { from: game.state.busyUntil - minutes, until: game.state.busyUntil };
+  } else if (clinicStay && !lapse) clinicStay = null; // hold through a skip's time-lapse, then out
+  const k = clinicStay ? 0.5 + 0.5 * Math.sin(t * 3) : 0;
+  clinicMat.emissive.setRGB(0.5 * k, 0.42 * k, 0.36 * k);
+  if (!clinicStay || !playing) {
+    pieEl.hidden = true;
+    return;
+  }
+  const p = THREE.MathUtils.clamp((minute - clinicStay.from) / (clinicStay.until - clinicStay.from), 0, 1);
+  pieFill.style.setProperty('--p', p.toFixed(3));
+  pieLabel.textContent = p >= 1 ? 'Ready!' : `Ready at ${formatClock(((clinicStay.until % 1440) + 1440) % 1440)}`;
+  const top = clinic.frame.toWorld(0, 7.2, 0); // just above the roof
+  const up = top.clone().normalize();
+  if (top.clone().sub(camera.position).dot(up) > 0) {
+    pieEl.hidden = true;
+    return;
+  }
+  top.project(camera);
+  pieEl.hidden = false;
+  // Kept on screen (the camera looks down, so the roof can sit near the top edge).
+  const y = THREE.MathUtils.clamp(((1 - top.y) / 2) * innerHeight, 185, innerHeight - 140);
+  pieEl.style.transform = `translate(-50%, -100%) translate(${((top.x + 1) / 2) * innerWidth}px, ${y}px)`;
+}
+
 const clock = new THREE.Clock();
 const walk = new THREE.Vector3();
 let hitCooldown = 0;
@@ -379,13 +415,13 @@ renderer.setAnimationLoop(() => {
   if (rideTo) {
     if (!isBusy()) endRide();
     else if (ride.update(dt, ride.boarding ? null : traffic.gapAhead(ride.position, ride.heading))) {
-      game.dispatch({ type: 'fast_forward' });
+      game.dispatch({ type: 'arrive' });
       hud.toast('Owa o! You have arrived.');
       endRide();
     } else player.teleport(ride.position);
   }
   hitCooldown = Math.max(0, hitCooldown - dt);
-  const struck = rideTo ? null : player.push((p) => {
+  const struck = rideTo || clinicStay ? null : player.push((p) => {
     const hit = traffic.pushOut(p);
     // Thrown clear, but never into a wall.
     if (hit) world.collisions.resolve(p);
@@ -416,7 +452,9 @@ renderer.setAnimationLoop(() => {
   bubbles.update(camera);
   smoke.update(dt * (1 + rush * 2), camera, playing ? player.ground : null, traffic.exhausts());
   moveMarker.update(dt);
-  player.setMarkerVisible(playing && !rideTo);
+  player.setMarkerVisible(playing && !rideTo && !clinicStay);
+  // Out of sight while on a danfo or inside the clinic.
+  player.root.visible = !rideTo && !clinicStay;
   player.faceMarker(camera);
   birds.update(dt * (1 + rush * 3));
 
@@ -424,6 +462,7 @@ renderer.setAnimationLoop(() => {
   const anchor = playing ? ground : camera.position.clone().setLength(ground.length());
   const minute = shownMinute();
   daylight.update(minute, anchor, rig.right, rig.forward);
+  updateClinic(playing, minute, clock.elapsedTime);
   space.setTones(daylight.rock, daylight.speck, daylight.haze);
   world.lights.update(clock.elapsedTime, daylight.lamps);
   windowNight.value = daylight.lamps;

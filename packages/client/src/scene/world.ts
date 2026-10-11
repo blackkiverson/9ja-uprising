@@ -52,7 +52,7 @@ export interface World {
   /** Street lamps (some dead, some flickering) and the safe/unsafe split they make at night. */
   lights: StreetLights;
   /** Buildings the player spends time inside (walking about while busy). */
-  interiors: Record<'office', { frame: Frame; w: number; d: number; mesh: THREE.Mesh }>;
+  interiors: Record<'office' | 'clinic', { frame: Frame; w: number; d: number; mesh: THREE.Mesh }>;
   /** Where each NPC stands (they face the player when near). */
   npcSpots: Record<NpcId, Frame>;
   /** The street web (also the future traffic graph). */
@@ -630,10 +630,13 @@ export function buildWorld(scene: THREE.Scene): World {
   const officeMesh = building(cityKit(rng, 10, 8, 4, 0xa9cfd6), office, 10, 8);
   places.push({ id: 'office', label: 'Office (Bode Thomas St)', door: office.toWorld(0, 0, 4.8) });
   compound(site(3).frame, 16, 15, true);
+  let clinicMesh!: THREE.Mesh;
+  let clinicFrame!: Frame;
   {
     // Mercy Clinic: a small whitewashed private clinic with its sign over the door.
     const clinic = site(6).frame;
-    building(cityKit(rng, 9, 7, 2, 0xe6ebe4), clinic, 9, 7);
+    clinicMesh = building(cityKit(rng, 9, 7, 2, 0xe6ebe4), clinic, 9, 7);
+    clinicFrame = clinic;
     signs.painted(subFrame(clinic, 0, 3.52).matrix(0, 4.3, 0), SIGN.clinic, 3);
     places.push({ id: 'clinic', label: 'Mercy Clinic', door: clinic.toWorld(0, 0, 4.6) });
   }
@@ -1189,6 +1192,6 @@ export function buildWorld(scene: THREE.Scene): World {
     weeds.instanceMatrix.needsUpdate = true;
   };
 
-  const interiors = { office: { frame: office, w: 10, d: 8, mesh: officeMesh } };
+  const interiors = { office: { frame: office, w: 10, d: 8, mesh: officeMesh }, clinic: { frame: clinicFrame, w: 9, d: 7, mesh: clinicMesh } };
   return { ground, places, occluders, collisions, hemi, sun, npcSpots, roads, update, heightAt: (p) => terrain.heightAt(p), smokeSpots, interiors, lights };
 }

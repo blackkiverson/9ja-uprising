@@ -1,4 +1,4 @@
-import { CLINIC, DANFO, DANFO_ROUTES, FOOD, NPCS, OFFICE_SHIFT, WEAPONS, formatClock, type Action, type ActionResult, type FoodId, type LocationId, type NpcId, type TreatmentId } from '@9ja/shared';
+import { CLINIC, DANFO, DANFO_ROUTES, FOOD, skipPrice, NPCS, OFFICE_SHIFT, WEAPONS, formatClock, type Action, type ActionResult, type FoodId, type LocationId, type NpcId, type TreatmentId } from '@9ja/shared';
 import type { Game } from './game';
 import type { Place } from './scene/world';
 
@@ -69,7 +69,8 @@ export class Hud {
     place.style.display = near || busy ? 'block' : 'none';
     place.textContent = busy ? `Busy until ${formatClock(s.busyUntil % 1440)}` : (near?.label ?? '');
 
-    const key = JSON.stringify([near?.id, npc, busy, s, threat !== null]);
+    // The skip price drops as the hours tick by, so it's part of the key.
+    const key = JSON.stringify([near?.id, npc, busy, s, threat !== null, busy ? skipPrice(s.busyUntil - now.totalMinutes) : 0]);
     if (key === this.lastKey) return;
     this.lastKey = key;
 
@@ -101,7 +102,7 @@ export class Hud {
 
     if (busy) {
       const label = { work: 'Fast forward to end of shift', travel: 'Skip the ride', recovering: 'Skip recovery', treatment: 'Skip treatment' }[s.busyWith ?? 'work'];
-      add(`⏩ ${label}`, { type: 'fast_forward' });
+      add(`⏩ ${label} (${naira(skipPrice(s.busyUntil - now.totalMinutes))})`, { type: 'fast_forward' });
       return;
     }
 

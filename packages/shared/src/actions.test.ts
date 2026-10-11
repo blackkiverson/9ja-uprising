@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { agberosSettled, applyAction } from './actions';
 import { MINUTES_PER_DAY, type WorldTime } from './clock';
-import { AGBERO, CLINIC, DANFO_ROUTES, FOOD, KNOCKOUT, OFFICE_SHIFT, STARTING_MONEY, VEHICLE_HIT } from './data';
+import { AGBERO, CLINIC, DANFO_ROUTES, skipPrice, FOOD, KNOCKOUT, OFFICE_SHIFT, STARTING_MONEY, VEHICLE_HIT } from './data';
 import { createPlayer, type PlayerState } from './state';
 
 const at = (day: number, minuteOfDay: number): WorldTime => ({
@@ -72,7 +72,7 @@ describe('applyAction', () => {
     expect(applyAction({ ...createPlayer(), energy: 20 }, { type: 'sleep' }, at(3, 12 * 60)).ok).toBe(true);
   });
 
-  it('fast-forwards to the end of a shift by moving the personal clock', () => {
+  it('fast-forwards to the end of a shift for a price, by moving the personal clock', () => {
     const p = { ...createPlayer(), location: 'office' as const };
     const working = ok(applyAction(p, { type: 'work_shift' }, at(5, 8 * 60)));
     expect(working.busyWith).toBe('work');
@@ -81,6 +81,9 @@ describe('applyAction', () => {
     const after = ok(r);
     expect(after.timeOffset).toBe(7 * 60);
     expect(after.busyWith).toBe(null);
+    expect(after.money).toBe(working.money - skipPrice(7 * 60));
+    // Can't afford it: no skip.
+    expect(applyAction({ ...working, money: 50 }, { type: 'fast_forward' }, at(5, 9 * 60)).ok).toBe(false);
     // At the new personal time (16:00) the player is free again.
     expect(applyAction(after, { type: 'fast_forward' }, at(5, 16 * 60)).ok).toBe(false);
     expect(applyAction(after, { type: 'eat', item: 'gala' }, at(5, 16 * 60)).ok).toBe(false); // free, just no gala
@@ -147,5 +150,13 @@ describe('applyAction', () => {
     // Low on health: a beating is a knockout.
     const ko = applyAction({ ...p, health: 5 }, { type: 'agbero_rough_up', kind: 'push' }, at(2, 23 * 60));
     expect(ko.ok && ko.knockedOut).toBe(true);
+  });
+
+  it('arriving by danfo catches the clock up for free, only on a ride', () => {
+    const riding = ok(applyAction({ ...createPlayer(), location: 'bus_stop' as const }, { type: 'danfo', to: 'market' }, at(1, 600)));
+    const arrived = ok(applyAction(riding, { type: 'arrive' }, at(1, 610)));
+    expect(arrived.money).toBe(riding.money);
+    expect(arrived.busyWith).toBe(null);
+    expect(applyAction({ ...createPlayer(), busyUntil: at(1, 700).totalMinutes, busyWith: 'work' as const }, { type: 'arrive' }, at(1, 600)).ok).toBe(false);
   });
 });

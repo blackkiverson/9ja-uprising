@@ -1,5 +1,5 @@
 import { MINUTES_PER_DAY, formatClock, type WorldTime } from './clock';
-import { AGBERO, CLINIC, DANFO, DANFO_ROUTES, FOOD, HIT_MIN_SPEED, KNOCKOUT, MAX_ENERGY, OFFICE_SHIFT, SLEEP, VEHICLE_HIT, type FoodId, type LocationId, type TreatmentId, type VehicleKind } from './data';
+import { AGBERO, CLINIC, DANFO, skipPrice, DANFO_ROUTES, FOOD, HIT_MIN_SPEED, KNOCKOUT, MAX_ENERGY, OFFICE_SHIFT, SLEEP, VEHICLE_HIT, type FoodId, type LocationId, type TreatmentId, type VehicleKind } from './data';
 import { applyChoice, checkChoice, type NpcId } from './dialogue';
 import type { PlayerState } from './state';
 
@@ -14,6 +14,8 @@ export type Action =
   | { type: 'dialogue'; npc: NpcId; node: string; choice: number }
   | { type: 'hit_by_vehicle'; vehicle: VehicleKind; speed: number }
   | { type: 'fast_forward' }
+  /** The danfo pulled up: the clock catches up to the ride's end, free (only while travelling). */
+  | { type: 'arrive' }
   | { type: 'treat'; treatment: TreatmentId }
   | { type: 'settle_agberos' }
   /** push: shoved to the ground (health); rob: pockets emptied (money). The caller rolls which. */
@@ -33,6 +35,14 @@ export function applyAction(prev: PlayerState, action: Action, now: WorldTime): 
   // Traffic doesn't wait for you to be free.
   if (action.type === 'hit_by_vehicle') return hitByVehicle(prev, action.vehicle, action.speed, now);
   if (action.type === 'fast_forward') return fastForward(prev, now);
+  if (action.type === 'arrive') {
+    if (prev.busyWith !== 'travel' || prev.busyUntil <= now.totalMinutes) return fail('Not on a ride.');
+    const s = JSON.parse(JSON.stringify(prev)) as PlayerState;
+    const left = s.busyUntil - now.totalMinutes;
+    s.timeOffset += left;
+    s.busyWith = null;
+    return { ok: true, state: s, message: '', skipped: left };
+  }
   if (action.type === 'agbero_rough_up') return roughUp(prev, action.kind, now);
   if (now.totalMinutes < prev.busyUntil) {
     return fail(`Busy for another ${prev.busyUntil - now.totalMinutes} minutes.`);
@@ -197,13 +207,16 @@ function roughUp(prev: PlayerState, kind: 'push' | 'rob', now: WorldTime): Actio
   return { ok: true, state: s, message: `Agberos pushed you down. -${AGBERO.damage} health` };
 }
 
-/** Skip whatever you're busy with: the personal clock jumps to when it ends. */
+/** Skip whatever you're busy with, for a price: the personal clock jumps to when it ends. */
 function fastForward(prev: PlayerState, now: WorldTime): ActionResult {
   const left = prev.busyUntil - now.totalMinutes;
   if (left <= 0) return fail('Nothing to skip.');
+  const price = skipPrice(left);
+  if (prev.money < price) return fail(`Skipping costs ₦${price.toLocaleString()}. You no get am.`);
   const s = JSON.parse(JSON.stringify(prev)) as PlayerState;
+  s.money -= price;
   s.timeOffset += left;
   const done = { work: 'Shift over.', travel: 'You have arrived.', recovering: 'Back on your feet.', treatment: 'Discharged.' }[s.busyWith ?? 'work'];
   s.busyWith = null;
-  return { ok: true, state: s, message: done, skipped: left };
+  return { ok: true, state: s, message: `${done} -₦${price.toLocaleString()}`, skipped: left };
 }
