@@ -21,7 +21,6 @@ npm run build
 | Space | Jump |
 | E | Talk to the nearest NPC |
 | M / sound button | Music on/off |
-| N / next button | Next track (in list order) |
 
 ## Layout
 
@@ -44,6 +43,6 @@ npm run build
 
 Four looping tracks; track 0 always plays first (title screen and start of play), then the rest rotate with crossfades. Until tracks are licensed, each slot plays an original placeholder Afrobeats groove synthesised in `packages/client/src/audio/music.ts` (no licence needed).
 
-To try songs locally without them touching the repo, add `packages/client/public/music/tracks.json` (git-ignored) listing `{ "title", "src", "slot"? }` entries: with `slot` they replace that track, otherwise they join the rotation.
+To try songs locally without them touching the repo, add `packages/client/public/music/tracks.json` (git-ignored) listing `{ "title", "src" }` entries. When present it replaces the whole soundtrack (first entry plays first); remove it to get the placeholder grooves back.
 
 To use real tracks in the shipped game: put the files in `packages/client/public/music/` and set `src` on each entry in `TRACKS`. **Do not commit licensed audio**: the repo is public and that folder is git-ignored. Supply the files at deploy time instead (e.g. download them in the Pages workflow from private storage). Instrumental-only versions of commercial songs still need both the composition and recording licences.

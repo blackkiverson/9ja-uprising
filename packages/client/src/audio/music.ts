@@ -223,12 +223,12 @@ interface Playing {
 /**
  * Optional local track list at /music/tracks.json (git-ignored, never deployed): lets you try real
  * songs on your own machine without their names or files ever entering the public repo.
- * Entries with a `slot` replace that track; the rest are added to the rotation.
+ * When present it replaces the whole soundtrack (first entry plays first); without it the
+ * placeholder grooves play.
  */
 interface LocalTrack {
   title: string;
   src: string;
-  slot?: number;
 }
 
 export class Music {
@@ -250,12 +250,7 @@ export class Music {
     this.ready = fetch(`${base}music/tracks.json`)
       .then((r) => (r.ok ? (r.json() as Promise<LocalTrack[]>) : []))
       .then((local) => {
-        for (const lt of local) {
-          const fallback = this.tracks[lt.slot ?? 0]!.groove;
-          const track: Track = { title: lt.title, src: lt.src, groove: fallback };
-          if (lt.slot !== undefined && lt.slot < this.tracks.length) this.tracks[lt.slot] = track;
-          else this.tracks.push(track);
-        }
+        if (local.length) this.tracks = local.map((lt, i) => ({ title: lt.title, src: lt.src, groove: TRACKS[i % TRACKS.length]!.groove }));
       })
       .catch(() => {
         // No local list (the normal case on the public site).
