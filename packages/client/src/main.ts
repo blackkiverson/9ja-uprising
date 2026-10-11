@@ -136,15 +136,27 @@ const intro = new Intro();
 const introEl = document.getElementById('intro')!;
 const startGame = () => {
   intro.begin(camera);
+  introEl.classList.remove('back');
   introEl.classList.add('leaving');
 };
+// Exit: back to the turning planet and the Begin button. Progress is saved after every action.
+document.getElementById('exit')!.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (intro.active) return;
+  dialogue.close();
+  player.followPath([]);
+  intro.exit(camera);
+  if (!document.body.contains(introEl)) document.body.append(introEl);
+  introEl.classList.remove('leaving');
+  introEl.classList.add('back');
+});
 document.getElementById('begin')!.addEventListener('click', startGame);
 window.addEventListener('keydown', (e) => {
   if (intro.active && (e.code === 'Enter' || e.code === 'Space')) startGame();
 });
 if (new URLSearchParams(location.search).has('skipIntro')) {
   intro.skip();
-  introEl.remove();
+  introEl.classList.add('leaving');
 }
 
 window.addEventListener('resize', () => {

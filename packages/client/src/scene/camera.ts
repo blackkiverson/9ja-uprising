@@ -68,7 +68,7 @@ export class CameraRig {
  * Returns true while it owns the camera.
  */
 export class Intro {
-  private phase: 'orbit' | 'flying' | 'done' = 'orbit';
+  private phase: 'orbit' | 'flying' | 'leaving' | 'done' = 'orbit';
   private angle = 0.6;
   private t = 0;
   private from = new THREE.Vector3();
@@ -79,7 +79,8 @@ export class Intro {
   }
 
   begin(camera: THREE.Camera): void {
-    if (this.phase !== 'orbit') return;
+    // Also allowed mid fly-out, so tapping Begin straight after Exit isn't ignored.
+    if (this.phase !== 'orbit' && this.phase !== 'leaving') return;
     this.phase = 'flying';
     this.t = 0;
     this.from.copy(camera.position);
@@ -90,14 +91,41 @@ export class Intro {
     this.phase = 'done';
   }
 
+  /** Back to the title: fly from the play camera out to the orbiting view. */
+  exit(camera: THREE.Camera): void {
+    if (this.phase !== 'done') return;
+    this.phase = 'leaving';
+    this.t = 0;
+    this.from.copy(camera.position);
+    this.fromUp.copy(camera.up);
+    // Pick up the orbit from the side of the planet we're on, so the fly-out doesn't swing round.
+    this.angle = Math.atan2(camera.position.x, camera.position.z);
+  }
+
+  private orbitPosition(camera: THREE.PerspectiveCamera, out = new THREE.Vector3()): THREE.Vector3 {
+    const fit = 78 / (Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.min(1, camera.aspect));
+    return out.set(Math.sin(this.angle), 0.35, Math.cos(this.angle)).setLength(fit);
+  }
+
   update(dt: number, camera: THREE.PerspectiveCamera, rig: CameraRig): void {
     if (this.phase === 'orbit') {
       this.angle += 0.12 * dt;
       // Far enough that the planet and its clouds fit on any screen shape.
-      const fit = 78 / (Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.min(1, camera.aspect));
-      camera.position.set(Math.sin(this.angle), 0.35, Math.cos(this.angle)).setLength(fit);
+      this.orbitPosition(camera, camera.position);
       camera.up.set(0, 1, 0);
       camera.lookAt(0, 0, 0);
+      return;
+    }
+    if (this.phase === 'leaving') {
+      this.t = Math.min(1, this.t + dt / 2.2);
+      const e = this.t * this.t * (3 - 2 * this.t);
+      const to = this.orbitPosition(camera);
+      const q = new THREE.Quaternion().setFromUnitVectors(this.from.clone().normalize(), to.clone().normalize());
+      const dir = this.from.clone().normalize().applyQuaternion(new THREE.Quaternion().slerp(q, e));
+      camera.position.copy(dir).setLength(THREE.MathUtils.lerp(this.from.length(), to.length(), e));
+      camera.up.copy(this.fromUp).lerp(new THREE.Vector3(0, 1, 0), e).normalize();
+      camera.lookAt(rig.focus.clone().lerp(new THREE.Vector3(), e));
+      if (this.t >= 1) this.phase = 'orbit';
       return;
     }
     if (this.phase !== 'flying') return;
