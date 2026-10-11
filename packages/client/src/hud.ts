@@ -17,6 +17,21 @@ export class Hud {
     private onSkip: (minutes: number) => void,
   ) {}
 
+  /**
+   * Something taken from you: a card under the status that stacks with others and goes after
+   * 10 s. amount is shown big (e.g. ₦800, 10 health), why underneath.
+   */
+  loss(kind: 'money' | 'health', amount: number, why: string): void {
+    const el = document.createElement('div');
+    el.className = `loss ${kind}`;
+    const big = document.createElement('b');
+    if (kind === 'money') big.innerHTML = `-<span class="naira">₦</span>${amount.toLocaleString('en-GB')}`;
+    else big.textContent = `-${amount} health`;
+    el.append(big, document.createTextNode(why));
+    $('losses').append(el);
+    window.setTimeout(() => el.remove(), 10_000);
+  }
+
   toast(text: string): void {
     const el = $('toast');
     el.textContent = text;

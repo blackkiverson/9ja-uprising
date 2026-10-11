@@ -172,3 +172,14 @@ body:not(.playing) #tip { display: none; }
   border-radius: 8px; background: #4f8f5a; color: #fff; cursor: pointer; box-shadow: 0 2px 0 var(--ink); }
 @keyframes tip-in { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (max-width: 520px) { #tip { top: auto; bottom: 120px; right: 16px; } }
+
+/* What you just lost (to agberos): stacked under the status, each gone after 10 s. */
+#losses { position: absolute; top: 132px; left: 16px; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+.loss { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 2px solid var(--ink); border-radius: 10px;
+  background: #ffe9e3; color: #8a2a20; font-size: 13px; font-weight: 800; box-shadow: 0 2px 0 var(--ink);
+  animation: loss-in 0.25s ease-out, loss-out 0.4s ease-in 9.6s forwards; }
+.loss b { font-family: 'Bungee', system-ui, sans-serif; font-weight: 400; font-size: 15px; }
+.loss .naira { font-family: system-ui, sans-serif; font-weight: 800; }
+@keyframes loss-in { from { transform: translateX(-12px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes loss-out { to { transform: translateX(-12px); opacity: 0; } }
+@media (max-width: 420px) { #losses { top: 112px; } }

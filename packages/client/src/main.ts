@@ -302,8 +302,11 @@ let roughCooldown = 0;
 let harassed = false;
 function settleAgberos(): void {
   const r = game.dispatch({ type: 'settle_agberos' });
-  hud.toast(r.ok ? r.message : r.reason);
-  if (!r.ok) return;
+  if (!r.ok) {
+    hud.toast(r.reason);
+    return;
+  }
+  hud.loss('money', AGBERO.settle, 'Settled the agberos');
   const nearest = traffic.agberosNear(player.ground, 4)[0];
   if (nearest) bubbles.say(nearest, pick(AGBERO_LINES.settled), 2.6, 'calm');
   gripTime = 0;
@@ -325,13 +328,15 @@ function updateAgberos(dt: number, active: boolean): void {
   gripTime = harassed ? gripTime + dt : Math.max(0, gripTime - dt * 2);
   if (gripTime > 1.5 && roughCooldown <= 0) {
     const kind = Math.random() < 0.5 ? 'push' : 'rob';
-    const healthBefore = game.state.health;
+    const before = { health: game.state.health, money: game.state.money };
     const r = game.dispatch({ type: 'agbero_rough_up', kind });
     if (r.ok) {
       // A robbery with empty pockets turns into a shove, so judge by what actually happened.
-      const pushed = r.knockedOut === true || r.state.health < healthBefore;
+      const pushed = r.knockedOut === true || r.state.health < before.health;
       bubbles.say(grip[0]!, pick(pushed ? AGBERO_LINES.push : AGBERO_LINES.rob), 2.4);
-      hud.toast(r.message);
+      if (r.knockedOut) hud.toast(r.message);
+      else if (pushed) hud.loss('health', before.health - r.state.health, 'Pushed down by agberos');
+      else hud.loss('money', before.money - r.state.money, 'Robbed by agberos');
       if (pushed) {
         player.knockDown();
         hurt(r.knockedOut === true);
