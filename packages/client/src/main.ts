@@ -8,7 +8,7 @@ import { Music } from './audio/music';
 import { Dialogue } from './dialogue';
 import { Hud } from './hud';
 import { Keyboard } from './input';
-import { CameraRig, Intro, createCamera, fadeOccluders } from './scene/camera';
+import { CameraRig, Intro, LapseCam, createCamera, fadeOccluders } from './scene/camera';
 import { Birds } from './scene/birds';
 import { Clouds } from './scene/clouds';
 import { Collisions } from './scene/collision';
@@ -238,10 +238,13 @@ function endRide(): void {
 // --- Time-lapse: skipping time (fast-forward, sleep) races the sky through the hours skipped. ---
 // Timed on the real clock, not the frame delta (which is capped), so a slow frame can't drag it out.
 let lapse: { from: number; to: number; t: number; dur: number; start: number } | null = null;
+const lapseCam = new LapseCam();
 function startLapse(minutes: number): void {
   const to = game.exactNow();
-  lapse = { from: to - minutes, to, t: 0, dur: THREE.MathUtils.clamp(2 + minutes / 150, 2.5, 6), start: performance.now() };
+  // Long enough to pull out, spin the planet and dive back in.
+  lapse = { from: to - minutes, to, t: 0, dur: THREE.MathUtils.clamp(3.6 + minutes / 160, 4.5, 7.5), start: performance.now() };
   player.followPath([]);
+  lapseCam.start(camera, rig);
 }
 /** 0 to 1 and back over the lapse: how hard the world is racing right now. */
 const lapseRush = () => (lapse ? Math.sin(Math.PI * Math.min(1, lapse.t / lapse.dur)) : 0);
@@ -386,7 +389,13 @@ function updateAgberos(dt: number, active: boolean): void {
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
   const playing = !intro.active;
-  if (lapse && (lapse.t = (performance.now() - lapse.start) / 1000) >= lapse.dur) lapse = null;
+  if (lapse && (lapse.t = (performance.now() - lapse.start) / 1000) >= lapse.dur) {
+    lapse = null;
+    lapseCam.active = false;
+    rig.update(player.ground, 0, true);
+  }
+  // While the time-lapse camera is out at the planet, everything visible keeps living.
+  const cinematic = lapseCam.active;
   const busy = isBusy() || !playing || dialogue.isOpen || lapse !== null;
   if (keyboard.consumeJump() && !busy) player.jump();
 
@@ -433,24 +442,27 @@ renderer.setAnimationLoop(() => {
   if (near && near.id !== game.state.location) game.dispatch({ type: 'enter', location: near.id });
 
   const ground = player.ground;
-  if (playing) {
+  if (playing && cinematic && lapse) lapseCam.update(lapse.t, lapse.dur, camera, rig, ground);
+  else if (playing) {
     rig.update(ground, dt);
     fadeOccluders(camera, ground, world.occluders, dt, inOffice ? office.mesh : null);
   } else intro.update(dt, camera, rig);
   // In a time-lapse the whole world races: clouds stream, traffic and crowds rush about.
   const rush = lapseRush();
-  clouds.update(dt * (1 + rush * 30), camera, playing ? ground : null);
+  // Out at the planet (title or time-lapse) there's no single focus: the whole visible face lives.
+  const focus = playing && !cinematic ? ground : null;
+  clouds.update(dt * (1 + rush * 30), camera, focus);
   const nearNpc = playing ? npcs.nearest(ground) : null;
   // Walking away ends the conversation.
   if (dialogue.isOpen && !nearNpc) dialogue.close();
-  npcs.update(clock.elapsedTime, dt, playing ? ground : null, camera, !dialogue.isOpen);
+  npcs.update(clock.elapsedTime, dt, focus, camera, !dialogue.isOpen);
   world.update(dt);
   space.update(dt, camera);
   const hostile = playing && !rideTo && !isBusy() && lapse === null && daylight.lamps > 0.3 && !agberosSettled(game.state, game.now());
-  for (let i = 0, n = 1 + Math.round(rush * 4); i < n; i++) traffic.update(dt, playing ? player.ground : null, camera, rideTo ? { p: ride.position, f: ride.heading } : null, daylight.lamps, hostile ? player.ground : null);
+  for (let i = 0, n = 1 + Math.round(rush * 4); i < n; i++) traffic.update(dt, focus, camera, rideTo ? { p: ride.position, f: ride.heading } : null, daylight.lamps, hostile ? player.ground : null);
   updateAgberos(dt, hostile);
   bubbles.update(camera);
-  smoke.update(dt * (1 + rush * 2), camera, playing ? player.ground : null, traffic.exhausts());
+  smoke.update(dt * (1 + rush * 2), camera, focus, traffic.exhausts());
   moveMarker.update(dt);
   player.setMarkerVisible(playing && !rideTo && !clinicStay);
   // Out of sight while on a danfo or inside the clinic.
@@ -459,7 +471,7 @@ renderer.setAnimationLoop(() => {
   birds.update(dt * (1 + rush * 3));
 
   // Lights ride with whatever we're looking at: the player in play, the planet's visible face on the title.
-  const anchor = playing ? ground : camera.position.clone().setLength(ground.length());
+  const anchor = focus ?? camera.position.clone().setLength(ground.length());
   const minute = shownMinute();
   daylight.update(minute, anchor, rig.right, rig.forward);
   updateClinic(playing, minute, clock.elapsedTime);

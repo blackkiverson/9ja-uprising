@@ -42,6 +42,12 @@ export class CameraRig {
       .addScaledVector(this.forward, -Math.cos(PITCH) * d);
   }
 
+  /** Re-centre on a point anywhere on the planet, with screen-up pointing north there. */
+  reset(target: THREE.Vector3): void {
+    northAt(target, this.forward);
+    this.update(target, 1, true);
+  }
+
   update(target: THREE.Vector3, dt: number, snap = false): void {
     if (snap) this.focus.copy(target);
     else {
@@ -192,5 +198,82 @@ export function fadeOccluders(camera: THREE.Camera, target: THREE.Vector3, occlu
     mat.transparent = mat.opacity < 1;
     // Hide the outline hull while faded, otherwise it shows as a dark slab.
     for (const child of obj.children) child.visible = mat.opacity > 0.9;
+  }
+}
+
+const smooth = (t: number) => t * t * (3 - 2 * t);
+const Y = new THREE.Vector3(0, 1, 0);
+
+/**
+ * Time-lapse camera: pull out to the whole planet, spin it fast through the hours being skipped,
+ * then dive back in on wherever the player ends up. Driven by elapsed time over a fixed total,
+ * so it lands exactly when the time-lapse ends.
+ */
+export class LapseCam {
+  active = false;
+  private from = new THREE.Vector3();
+  private fromUp = new THREE.Vector3();
+  private fromFocus = new THREE.Vector3();
+  private startAngle = 0;
+  private landed = false;
+  private static OUT = 1.3;
+  private static IN = 1.6;
+
+  start(camera: THREE.Camera, rig: CameraRig): void {
+    this.active = true;
+    this.landed = false;
+    this.from.copy(camera.position);
+    this.fromUp.copy(camera.up);
+    this.fromFocus.copy(rig.focus);
+    this.startAngle = Math.atan2(camera.position.x, camera.position.z);
+  }
+
+  /** Orbit point at an angle round the planet, far enough to fit it on screen. */
+  private orbit(camera: THREE.PerspectiveCamera, angle: number, out = new THREE.Vector3()): THREE.Vector3 {
+    const fit = 72 / (Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.min(1, camera.aspect));
+    return out.set(Math.sin(angle), 0.3, Math.cos(angle)).setLength(fit);
+  }
+
+  /** elapsed/total in seconds; dest: where the player is now (the dive's target). */
+  update(elapsed: number, total: number, camera: THREE.PerspectiveCamera, rig: CameraRig, dest: THREE.Vector3): void {
+    if (!this.active) return;
+    const out = LapseCam.OUT;
+    const dive = LapseCam.IN;
+    const spinTime = Math.max(0.5, total - out - dive);
+    // The spin ends facing the destination, after at least one full fast turn.
+    let endAngle = Math.atan2(dest.x, dest.z);
+    while (endAngle < this.startAngle + Math.PI * 2) endAngle += Math.PI * 2;
+
+    if (elapsed < out) {
+      const e = smooth(elapsed / out);
+      const to = this.orbit(camera, this.startAngle);
+      const q = new THREE.Quaternion().setFromUnitVectors(this.from.clone().normalize(), to.clone().normalize());
+      const dir = this.from.clone().normalize().applyQuaternion(new THREE.Quaternion().slerp(q, e));
+      camera.position.copy(dir).setLength(THREE.MathUtils.lerp(this.from.length(), to.length(), e));
+      camera.up.copy(this.fromUp).lerp(Y, e).normalize();
+      camera.lookAt(this.fromFocus.clone().lerp(new THREE.Vector3(), e));
+      return;
+    }
+    if (elapsed < out + spinTime) {
+      const e = smooth((elapsed - out) / spinTime);
+      this.orbit(camera, THREE.MathUtils.lerp(this.startAngle, endAngle, e), camera.position);
+      camera.up.copy(Y);
+      camera.lookAt(0, 0, 0);
+      return;
+    }
+    // Dive: line the rig up on the destination, then fly from the orbit down to its view.
+    if (!this.landed) {
+      rig.reset(dest);
+      this.landed = true;
+    } else rig.update(dest, 0, true);
+    const e = smooth(Math.min(1, (elapsed - out - spinTime) / dive));
+    const fromPos = this.orbit(camera, endAngle);
+    const to = rig.desiredPosition();
+    const q = new THREE.Quaternion().setFromUnitVectors(fromPos.clone().normalize(), to.clone().normalize());
+    const dir = fromPos.clone().normalize().applyQuaternion(new THREE.Quaternion().slerp(q, e));
+    camera.position.copy(dir).setLength(THREE.MathUtils.lerp(fromPos.length(), to.length(), e));
+    camera.up.copy(Y).lerp(rig.focus.clone().normalize(), e).normalize();
+    camera.lookAt(new THREE.Vector3().lerp(rig.focus, e));
+    if (elapsed >= total) this.active = false;
   }
 }
