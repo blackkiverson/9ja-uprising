@@ -1,4 +1,4 @@
-import { DANFO, FOOD, OFFICE_SHIFT, formatClock, type Action, type FoodId } from '@9ja/shared';
+import { DANFO, FOOD, NPCS, OFFICE_SHIFT, formatClock, type Action, type FoodId, type NpcId } from '@9ja/shared';
 import type { Game } from './game';
 import type { Place } from './scene/world';
 
@@ -9,7 +9,11 @@ export class Hud {
   private toastTimer = 0;
   private lastKey = '';
 
-  constructor(private game: Game, private onDanfo: () => void) {}
+  constructor(
+    private game: Game,
+    private onDanfo: () => void,
+    private onTalk: (npc: NpcId) => void,
+  ) {}
 
   toast(text: string): void {
     const el = $('toast');
@@ -20,7 +24,7 @@ export class Hud {
   }
 
   /** Called every frame; only rebuilds the action buttons when something relevant changed. */
-  update(near: Place | null): void {
+  update(near: Place | null, npc: NpcId | null = null): void {
     const s = this.game.state;
     const now = this.game.now();
     const busy = now.totalMinutes < s.busyUntil;
@@ -34,7 +38,7 @@ export class Hud {
     place.style.display = near || busy ? 'block' : 'none';
     place.textContent = busy ? `Busy until ${formatClock(s.busyUntil % 1440)}` : (near?.label ?? '');
 
-    const key = JSON.stringify([near?.id, busy, s]);
+    const key = JSON.stringify([near?.id, npc, busy, s]);
     if (key === this.lastKey) return;
     this.lastKey = key;
 
@@ -55,6 +59,13 @@ export class Hud {
       });
       actions.append(btn);
     };
+
+    if (npc) {
+      const btn = document.createElement('button');
+      btn.textContent = `Talk to ${NPCS[npc].name}`;
+      btn.addEventListener('click', () => this.onTalk(npc));
+      actions.append(btn);
+    }
 
     switch (near?.id) {
       case 'home':

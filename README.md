@@ -12,6 +12,15 @@ npm run typecheck
 npm run build
 ```
 
+## Controls
+
+| Input | Action |
+|---|---|
+| Click / tap | Walk to point |
+| WASD / arrow keys | Walk (screen-relative; camera never rotates) |
+| Space | Jump |
+| Mouse wheel / pinch / `+` `-` | Zoom |
+
 ## Layout
 
 | Path | What |
@@ -26,4 +35,5 @@ npm run build
 - **Time:** GTA Online model. One shared world clock (1 game day = 48 real minutes); energy and progress are personal. Sleep restores energy and advances your personal day; it never skips world time.
 - **Rules live in `shared`:** every state change goes through `applyAction`, so the server can validate the same actions when multiplayer lands.
 - **Outlines:** inverted hull rather than a post-processing pass, for mid-range phone performance.
+- **World:** generated from a fixed seed (`scene/world.ts`), so every player gets the same Surulere. Leafy suburb compounds in the west blend into the commercial strip in the east. Vegetation is instanced and buildings are merged per building to keep draw calls low.
 - **Art pipeline:** Blender with flat colours, export GLB, toon material and outline applied at runtime.

@@ -1,5 +1,6 @@
 import type { WorldTime } from './clock';
 import { DANFO, FOOD, MAX_ENERGY, OFFICE_SHIFT, type FoodId, type LocationId } from './data';
+import { applyChoice, checkChoice, type NpcId } from './dialogue';
 import type { PlayerState } from './state';
 
 export type Action =
@@ -9,7 +10,8 @@ export type Action =
   | { type: 'eat'; item: FoodId }
   | { type: 'danfo'; to: LocationId }
   | { type: 'sleep' }
-  | { type: 'relationship'; npc: string; delta: number };
+  | { type: 'relationship'; npc: string; delta: number }
+  | { type: 'dialogue'; npc: NpcId; node: string; choice: number };
 
 export type ActionResult =
   | { ok: true; state: PlayerState; message: string }
@@ -40,9 +42,13 @@ export function applyAction(prev: PlayerState, action: Action, now: WorldTime): 
       }
       if (s.energy < OFFICE_SHIFT.energyCost) return fail('Too tired to work. Eat or sleep first.');
       s.energy -= OFFICE_SHIFT.energyCost;
-      s.money += OFFICE_SHIFT.pay;
       s.busyUntil = now.totalMinutes + OFFICE_SHIFT.durationMinutes;
-      return { ok: true, state: s, message: `Shift done. +₦${OFFICE_SHIFT.pay.toLocaleString()}` };
+      // A salary advance from Oga Bayo comes out of the next shift.
+      const advance = s.flags.oga_advance === true ? 5000 : 0;
+      s.flags.oga_advance = false;
+      s.money += OFFICE_SHIFT.pay - advance;
+      const repaid = advance ? ` (₦${advance.toLocaleString()} advance repaid)` : '';
+      return { ok: true, state: s, message: `Shift done. +₦${(OFFICE_SHIFT.pay - advance).toLocaleString()}${repaid}` };
     }
 
     case 'buy_food': {
@@ -81,6 +87,12 @@ export function applyAction(prev: PlayerState, action: Action, now: WorldTime): 
       s.personalDay += 1;
       s.lastSleptWorldDay = now.day;
       return { ok: true, state: s, message: `Day ${s.personalDay}. You wake up rested.` };
+    }
+
+    case 'dialogue': {
+      const check = checkChoice(s, action.npc, action.node, action.choice, now);
+      if (!check.ok) return fail(check.reason || 'You cannot say that.');
+      return { ok: true, state: s, message: applyChoice(s, action.npc, action.node, action.choice, now) };
     }
 
     case 'relationship': {

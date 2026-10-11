@@ -1,11 +1,11 @@
 :root {
-  --ink: #2b2420;
+  --ink: #283130;
   --paper: #fffaf0;
-  --accent: #1f8a4c;
+  --accent: #4f8f5a;
   --muted: #8a7b6a;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; overflow: hidden; background: #f3e6c8; color: var(--ink);
+html, body { margin: 0; height: 100%; overflow: hidden; background: #76b6b1; color: var(--ink);
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif; touch-action: none; }
 #app, #app canvas { position: fixed; inset: 0; display: block; }
 #hud { position: fixed; inset: 0; pointer-events: none; padding: 12px 16px; }
@@ -23,3 +23,58 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #f3e6c8; col
 #toast { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); opacity: 0;
   transition: opacity 0.3s; white-space: nowrap; }
 #toast.show { opacity: 1; }
+
+/* HUD only shows once the intro has flown down to the player. */
+#hud { opacity: 0; transition: opacity 0.6s; }
+body.playing #hud { opacity: 1; }
+
+#intro { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+  justify-content: space-between; padding: 40px 16px 48px; pointer-events: none; transition: opacity 0.8s; }
+#intro.leaving { opacity: 0; }
+
+/* Block lettering: pale face, stepped grey-green extrusion, cool ink outline. */
+#intro h1 { margin: 0; text-align: center; font-family: 'Bungee', system-ui, sans-serif; font-weight: 400;
+  line-height: 0.92; color: #eef0e6; -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill;
+  text-shadow: 1px 1px 0 #a3aca3, 2px 2px 0 #a3aca3, 3px 3px 0 #9aa49c, 4px 4px 0 #9aa49c, 5px 5px 0 #8f998f,
+    6px 6px 0 #8f998f, 7px 7px 0 var(--ink); }
+#intro h1 span { display: block; }
+#intro h1 span:first-child { font-size: clamp(64px, 14vw, 128px); }
+#intro h1 span:last-child { font-size: clamp(30px, 6.4vw, 58px); margin-top: 4px; letter-spacing: 0.04em; }
+
+/* Begin: a real block. Top face in perspective above a front face; pressing squashes it down. */
+#begin { pointer-events: auto; position: relative; padding: 0; border: 0; background: none; cursor: pointer;
+  font-family: 'Bungee', system-ui, sans-serif; }
+#begin .top { display: block; height: 18px; margin: 0 7px; background: #b8892e; border: 3px solid var(--ink);
+  border-bottom: 0; transform: perspective(260px) rotateX(48deg); transform-origin: bottom;
+  transition: height 0.08s; }
+#begin .front { display: block; padding: 12px 52px 14px; background: #e3c24a; border: 3px solid var(--ink);
+  font-size: 26px; letter-spacing: 0.06em; color: #f4f1e6; -webkit-text-stroke: 1.5px var(--ink);
+  paint-order: stroke fill; text-shadow: 2px 3px 0 var(--ink); transition: transform 0.08s; }
+#begin:hover .front { background: #ecca55; }
+#begin:active .top { height: 6px; }
+#begin:active .front { transform: translateY(2px); }
+#intro.leaving #begin { pointer-events: none; }
+
+/* NPC name tags and the dialogue panel. */
+#npc-tags { position: fixed; inset: 0; pointer-events: none; }
+.npc-tag { position: absolute; left: 0; top: 0; display: none; padding: 3px 8px; border: 2px solid var(--ink);
+  border-radius: 8px; background: var(--paper); font-size: 12px; font-weight: 700; white-space: nowrap; }
+body:not(.playing) #npc-tags { display: none; }
+
+#dialogue { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); width: min(560px, calc(100% - 32px));
+  background: var(--paper); border: 3px solid var(--ink); border-radius: 14px; box-shadow: 0 5px 0 var(--ink);
+  padding: 14px 16px; z-index: 5; }
+#dialogue[hidden] { display: none; }
+.dlg-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.dlg-head strong { font-family: 'Bungee', system-ui, sans-serif; font-weight: 400; font-size: 18px; margin-right: 8px; }
+#dlg-role { color: var(--muted); font-size: 13px; }
+#dlg-rel { font-weight: 800; font-size: 13px; padding: 2px 8px; border-radius: 999px; border: 2px solid var(--ink);
+  background: #e9ecdf; }
+#dlg-text { margin: 10px 0 12px; font-size: 16px; line-height: 1.45; }
+#dlg-choices { display: flex; flex-direction: column; gap: 8px; }
+#dlg-choices button { text-align: left; font: inherit; font-size: 15px; font-weight: 600; padding: 10px 12px;
+  border: 2px solid var(--ink); border-radius: 10px; background: #fff; color: var(--ink); cursor: pointer; }
+#dlg-choices button:hover:not(:disabled) { background: #e9f3ea; }
+#dlg-choices button:disabled { opacity: 0.6; cursor: not-allowed; }
+#dlg-choices small { display: block; font-weight: 600; color: #a2483f; margin-top: 2px; }
+body.talking #actions, body.talking #place { display: none !important; }

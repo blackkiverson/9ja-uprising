@@ -6,8 +6,10 @@ function load(): PlayerState {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as PlayerState;
-      if (parsed.version === 1) return parsed;
+      const parsed = JSON.parse(raw) as PlayerState | (Omit<PlayerState, 'version' | 'flags'> & { version: 1 });
+      if (parsed.version === 2) return parsed;
+      // v1 saves predate story flags.
+      if (parsed.version === 1) return { ...parsed, version: 2, flags: {} };
     }
   } catch {
     // Storage blocked or corrupt save: start fresh.
