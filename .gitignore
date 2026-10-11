@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.vite/
+*.log
+.DS_Store
+*.blend1
+*.blend2
+.env*
+!.env.example

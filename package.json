@@ -1,0 +1,16 @@
+{
+  "name": "9ja-uprising",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/shared", "packages/client"],
+  "scripts": {
+    "dev": "npm run dev -w @9ja/client",
+    "build": "npm run build -w @9ja/client",
+    "preview": "npm run preview -w @9ja/client",
+    "test": "npm test -w @9ja/shared",
+    "typecheck": "tsc -p packages/shared && tsc -p packages/client"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

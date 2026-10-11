@@ -1,0 +1,25 @@
+:root {
+  --ink: #2b2420;
+  --paper: #fffaf0;
+  --accent: #1f8a4c;
+  --muted: #8a7b6a;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #f3e6c8; color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif; touch-action: none; }
+#app, #app canvas { position: fixed; inset: 0; display: block; }
+#hud { position: fixed; inset: 0; pointer-events: none; padding: 12px 16px; }
+.stats { display: flex; gap: 8px; flex-wrap: wrap; }
+.stats span, #place, #toast { background: var(--paper); border: 2px solid var(--ink); border-radius: 10px;
+  padding: 6px 10px; font-weight: 600; font-size: 14px; }
+/* Label stacks above the buttons so it never hides behind them when they wrap on phones. */
+.bottom { position: absolute; left: 16px; right: 16px; bottom: 16px; display: flex; flex-direction: column;
+  align-items: flex-start; gap: 8px; }
+#place { display: none; }
+#actions { display: flex; gap: 8px; flex-wrap: wrap; }
+#actions button { pointer-events: auto; font: inherit; font-weight: 600; font-size: 14px; padding: 10px 14px;
+  border-radius: 10px; border: 2px solid var(--ink); background: var(--accent); color: #fff; cursor: pointer; }
+#actions button:disabled { background: var(--muted); }
+#toast { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); opacity: 0;
+  transition: opacity 0.3s; white-space: nowrap; }
+#toast.show { opacity: 1; }
