@@ -287,27 +287,33 @@ export function buildWorld(scene: THREE.Scene): World {
   // Reserved sites along the main road at the hub (north = -1, south = +1).
   const MAIN_HW = 3;
   const FRONT = MAIN_HW + 0.6; // carriageway + gutter
-  // The market sits across the city, far enough to be worth a danfo ride.
-  const MARKET_S = (() => {
+  /** Arc length along the main road where it crosses a longitude. */
+  const sAt = (lambda: number) => {
     let best = 0;
     let bestD = Infinity;
     mainEdge.pts.forEach((p, i) => {
-      const d = Math.abs(chartOf(p).lambda - 1.9);
+      const d = Math.abs(chartOf(p).lambda - lambda);
       if (d < bestD) {
         bestD = d;
         best = mainEdge.arc[i]!;
       }
     });
     return best;
-  })();
+  };
+  // Key places are spread round the planet, roughly evenly, so getting about means walking
+  // (or a danfo): hub at 0, then clinic, work, market east through the city; home, church,
+  // mosque west through the suburb.
+  const OFFICE_S = sAt(1.75);
+  const HOME_S = sAt(-0.9);
+  const MARKET_S = sAt(2.55);
   const reserved = [
     { s: HUB_S, side: -1 as const, dist: FRONT + 2.3, r: 9 }, // food stall + kiosks
     { s: HUB_S - 6, side: 1 as const, dist: FRONT + 2, r: 8 }, // bus stop
-    { s: HUB_S + 16, side: 1 as const, dist: FRONT + 5, r: 8 }, // office
-    { s: HUB_S - 22, side: -1 as const, dist: FRONT + 10.5, r: 11 }, // home compound (set back so the gate has a verge)
-    { s: HUB_S + 22, side: -1 as const, dist: FRONT + 9.5, r: 11 }, // church
-    { s: HUB_S - 34, side: 1 as const, dist: FRONT + 7, r: 9 }, // mosque
-    { s: HUB_S + 36, side: -1 as const, dist: FRONT + 5.5, r: 10 }, // clinic
+    { s: OFFICE_S, side: 1 as const, dist: FRONT + 5, r: 8 }, // office
+    { s: HOME_S, side: -1 as const, dist: FRONT + 10.5, r: 11 }, // home compound (set back so the gate has a verge)
+    { s: sAt(-1.75), side: -1 as const, dist: FRONT + 9.5, r: 11 }, // church
+    { s: sAt(-2.55), side: 1 as const, dist: FRONT + 7, r: 9 }, // mosque
+    { s: sAt(0.9), side: -1 as const, dist: FRONT + 5.5, r: 10 }, // clinic
     { s: MARKET_S, side: 1 as const, dist: FRONT + 7.5, r: 15 }, // market and motor park
   ].map((r) => ({ ...r, c: roadsideOf(mainEdge, r.s, r.side, r.dist).frame.c }));
   const nearReserved = (p: THREE.Vector3, pad: number) => reserved.some((r) => r.c.distanceTo(p) < r.r + pad);
@@ -651,13 +657,16 @@ export function buildWorld(scene: THREE.Scene): World {
     }
   }
 
+  // Keep every key doorway clear of trees, poles and props planted later.
+  for (const pl of places) footprints.add(Frame.fromPoint(pl.door), 3.2, 3.2);
+
   // NPC spots near the places they belong to.
   const homeDoor = places.find((p) => p.id === 'home')!.door;
   const npcSpots: Record<NpcId, Frame> = {
     mama_nkechi: roadsideOf(mainEdge, HUB_S + 2.2, -1, FRONT + 1).frame,
     kelz: roadsideOf(mainEdge, HUB_S - 10.6, -1, FRONT + 1).frame,
-    tunde: roadsideOf(mainEdge, HUB_S - 15, 1, FRONT + 2.9).frame,
-    oga_bayo: roadsideOf(mainEdge, HUB_S + 19.5, 1, FRONT + 0.8).frame,
+    tunde: roadsideOf(mainEdge, HOME_S + 7, 1, FRONT + 2.9).frame,
+    oga_bayo: roadsideOf(mainEdge, OFFICE_S + 3.5, 1, FRONT + 0.8).frame,
     mallam_sani: Frame.fromPoint(Frame.fromPoint(homeDoor).toWorld(-3.4, 0, 0)),
   };
   for (const f of Object.values(npcSpots)) {
