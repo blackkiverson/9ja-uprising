@@ -24,6 +24,12 @@ interface Vehicle extends Agent {
   /** Last position, for keeping the player out and for visibility. */
   pos: THREE.Vector3;
   color: number;
+  /** Direction of travel (for exhaust). */
+  fwd: THREE.Vector3;
+  /** Old and smoky: puffs exhaust. */
+  smoky: boolean;
+  /** Drawn this frame. */
+  visible: boolean;
 }
 
 interface Walker extends Agent {
@@ -152,7 +158,7 @@ export class Traffic {
       for (let i = 0; i < counts[type]; i++) {
         const edge = spawnEdge();
         const maxSpeed = type === 'keke' ? rng.range(4, 5.5) : type === 'danfo' ? rng.range(5, 7) : rng.range(6, 8.5);
-        const v: Vehicle = { edge, s: rng.range(0, roads.length(edge)), dir: rng.chance(0.5) ? 1 : -1, speed: 0, type, index: i, maxSpeed, length: type === 'keke' ? 2.4 : type === 'danfo' ? 5 : 4.2, pos: new THREE.Vector3(), color: type === 'car' ? rng.pick(CAR_PAINT) : 0xffffff };
+        const v: Vehicle = { edge, s: rng.range(0, roads.length(edge)), dir: rng.chance(0.5) ? 1 : -1, speed: 0, type, index: i, maxSpeed, length: type === 'keke' ? 2.4 : type === 'danfo' ? 5 : 4.2, pos: new THREE.Vector3(), color: type === 'car' ? rng.pick(CAR_PAINT) : 0xffffff, fwd: new THREE.Vector3(), smoky: type === 'danfo' || (type === 'keke' ? rng.chance(0.6) : rng.chance(0.33)), visible: false };
         v.pos.copy(roads.at(edge, v.s).p);
         this.vehicles.push(v);
         this.sets[type].color(i, v.color);
@@ -264,6 +270,7 @@ export class Traffic {
     const slots: Record<VehicleType, number> = { car: 0, danfo: 0, keke: 0 };
     for (const v of this.vehicles) {
       const visible = onScreen(v.pos);
+      v.visible = visible;
       if (!visible) {
         // Off screen: no car-following, just keep roughly moving at a typical pace.
         if (farTick) {
@@ -305,6 +312,7 @@ export class Traffic {
       this.advance(v, Math.max(0, v.speed) * dt, true);
       const p = this.pose(v, v.edge.width / 4 + (v.type === 'keke' ? 0.2 : 0), _m);
       v.pos.copy(p);
+      v.fwd.copy(_f);
       const slot = slots[v.type]++;
       this.sets[v.type].set(slot, _m);
       this.sets[v.type].color(slot, v.color);
@@ -358,6 +366,17 @@ export class Traffic {
     }
     this.shadows.draw(shadow);
     this.shadows.commit();
+  }
+
+  /** Exhaust points of visible, smoky vehicles that are moving (rear, just above the road). */
+  exhausts(): THREE.Vector3[] {
+    const out: THREE.Vector3[] = [];
+    for (const v of this.vehicles) {
+      if (!v.visible || !v.smoky || v.speed < 0.3) continue;
+      const up = v.pos.clone().normalize();
+      out.push(v.pos.clone().addScaledVector(v.fwd, -v.length / 2).addScaledVector(up, v.type === 'keke' ? 0.4 : 0.5));
+    }
+    return out;
   }
 
   /** Keeps the player from walking through vehicles. Mutates p. */

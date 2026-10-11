@@ -55,6 +55,8 @@ export interface World {
   update: (dt: number) => void;
   /** Ground height above the base sphere (hills). */
   heightAt: (p: THREE.Vector3) => number;
+  /** Where smoke rises from: cooking pots, bush fires, smouldering rubbish. */
+  smokeSpots: { p: THREE.Vector3; kind: 'cook' | 'fire' | 'refuse' }[];
 }
 
 const WORLD_SEED = 9_2026;
@@ -115,16 +117,27 @@ function flowTexture(): THREE.CanvasTexture {
   c.width = 64;
   c.height = 256;
   const g = c.getContext('2d')!;
-  g.fillStyle = '#5aa6b0';
+  // Murky, like most Lagos waterways: green-brown water, silty smudges, scum along the banks.
+  g.fillStyle = '#6d8b78';
   g.fillRect(0, 0, 64, 256);
   const rng = new Rng(404);
-  for (let i = 0; i < 26; i++) {
-    g.fillStyle = rng.chance(0.5) ? '#8fcfd0' : '#a9dedd';
-    const x = rng.range(4, 56);
-    const y = rng.range(0, 256);
-    const h = rng.range(14, 40);
-    g.fillRect(x, y, rng.range(2, 4), h);
-    if (y + h > 256) g.fillRect(x, y - 256, 3, h);
+  const wrapRect = (x: number, y: number, w: number, h: number) => {
+    g.fillRect(x, y, w, h);
+    if (y + h > 256) g.fillRect(x, y - 256, w, h);
+  };
+  for (let i = 0; i < 14; i++) {
+    g.fillStyle = rng.chance(0.5) ? '#7d7a5c' : '#66806a';
+    wrapRect(rng.range(6, 50), rng.range(0, 256), rng.range(6, 14), rng.range(18, 40));
+  }
+  for (let i = 0; i < 22; i++) {
+    g.fillStyle = rng.chance(0.5) ? '#86a08c' : '#9bb09b';
+    wrapRect(rng.range(8, 54), rng.range(0, 256), rng.range(2, 3.5), rng.range(12, 34));
+  }
+  for (let i = 0; i < 40; i++) {
+    // Foam and scum collecting at the edges.
+    g.fillStyle = rng.chance(0.6) ? '#c9cdb8' : '#b8bca4';
+    const edge = rng.chance(0.5) ? rng.range(0, 7) : rng.range(57, 64);
+    wrapRect(edge, rng.range(0, 256), rng.range(1.5, 4), rng.range(2, 6));
   }
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -218,6 +231,7 @@ export function buildWorld(scene: THREE.Scene): World {
   const places: Place[] = [];
   const staticParts: THREE.BufferGeometry[] = []; // walls and props, merged into one draw call
   const gates: THREE.Vector3[] = []; // every doorway, so poles and props keep clear of them
+  const smokeSpots: World['smokeSpots'] = [];
 
   // --- Sky and lights. Lights follow the player (see main.ts) so there is no dark side underfoot. ---
   scene.background = new THREE.Color(SKY);
@@ -293,6 +307,8 @@ export function buildWorld(scene: THREE.Scene): World {
   const nodeR = roads.nodes.map((_, i) => roads.junctionRadius(i));
   const nearJunction = (p: THREE.Vector3, extra: number) => roads.nodes.some((q, i) => !roads.isolated.has(i) && q.distanceTo(p) < nodeR[i]! + extra);
   const free = (p: THREE.Vector3, pad = 0.3) => !roads.near(p, pad) && !onRiver(p, pad) && !footprints.contains(p, pad);
+  /** For things that belong right beside a street (heaps, kiosks): off the road, but allowed close to it. */
+  const roadsideFree = (p: THREE.Vector3, pad: number) => !roads.near(p, 0.05) && !onRiver(p, pad) && !footprints.contains(p, pad);
 
   // Road surfaces, gutters, pavements, lane dashes and junction plates: one draw call.
   {
@@ -532,6 +548,8 @@ export function buildWorld(scene: THREE.Scene): World {
     collisions.rect(stall, 4.4, 2.6);
     footprints.add(stall, 10, 5);
     places.push({ id: 'food_stall', label: "Mama Put's food stall", door: stall.toWorld(0, 0, 3.6) });
+    // Steam and smoke off Mama Nkechi's pots.
+    smokeSpots.push({ p: stall.toWorld(-1, 1.5, 1.4), kind: 'cook' }, { p: stall.toWorld(0.6, 1.45, 1.4), kind: 'cook' });
     for (const ds of [-8, 8]) {
       const f = roadsideOf(mainEdge, HUB_S + ds, -1, FRONT + 1.6).frame;
       prop(kioskKit(rng.pick(KIOSKS)), f);
@@ -695,20 +713,20 @@ export function buildWorld(scene: THREE.Scene): World {
   const water = flowTexture();
   {
     const onAnyRoad = (p: THREE.Vector3) => roads.near(p, 0.2);
-    const bankMat = toonMaterial(0x8b8a62);
+    const bankMat = toonMaterial(0x6f6a4e);
     bankMat.side = THREE.DoubleSide;
-    const bankGeo = polyStrip(RIVER_SAMPLES, 0, (RIVER_HW + 1) * 2, 0.004, 0x8b8a62, onAnyRoad, 8);
+    const bankGeo = polyStrip(RIVER_SAMPLES, 0, (RIVER_HW + 1) * 2, 0.004, 0x6f6a4e, onAnyRoad, 8);
     const riverGeo = polyStrip(RIVER_SAMPLES, 0, RIVER_HW * 2, 0.008, 0xffffff, onAnyRoad, 8, true);
     if (bankGeo) scene.add(Object.assign(new THREE.Mesh(bankGeo, bankMat), { raycast: () => {} }));
     if (riverGeo) {
       riverGeo.deleteAttribute('color');
       scene.add(Object.assign(new THREE.Mesh(riverGeo, new THREE.MeshBasicMaterial({ map: water, side: THREE.DoubleSide })), { raycast: () => {} }));
     }
-    const pondMat = new THREE.MeshBasicMaterial({ color: 0x5aa6b0 });
+    const pondMat = new THREE.MeshBasicMaterial({ color: 0x6d8b78 });
     for (const cc of PONDS) {
       const f = Frame.fromPoint(cc);
-      staticParts.push(new Kit().add(new THREE.RingGeometry(0, POND_R + 1, 28, 6), 0x8b8a62, [0, 0.004, 0], { rot: [-Math.PI / 2, 0, 0] }).bend(f).geometry);
-      const pm = new THREE.Mesh(new Kit().add(new THREE.RingGeometry(0, POND_R, 28, 6), 0x5aa6b0, [0, 0.008, 0], { rot: [-Math.PI / 2, 0, 0] }).bend(f).geometry, pondMat);
+      staticParts.push(new Kit().add(new THREE.RingGeometry(0, POND_R + 1, 28, 6), 0x6f6a4e, [0, 0.004, 0], { rot: [-Math.PI / 2, 0, 0] }).bend(f).geometry);
+      const pm = new THREE.Mesh(new Kit().add(new THREE.RingGeometry(0, POND_R, 28, 6), 0x6d8b78, [0, 0.008, 0], { rot: [-Math.PI / 2, 0, 0] }).bend(f).geometry, pondMat);
       pm.raycast = () => {};
       scene.add(pm);
       collisions.circle(cc, POND_R - 0.4);
@@ -913,7 +931,7 @@ export function buildWorld(scene: THREE.Scene): World {
       const atEnd = rng.chance(0.6);
       const s = atEnd ? (rng.chance(0.5) ? nodeR[e.a]! + 2 : len - nodeR[e.b]! - 2) : rng.range(3, Math.max(3.1, len - 3));
       const f = roads.roadside(e, s, rng.chance(0.5) ? 1 : -1, e.width / 2 + e.shoulder + 0.6);
-      if (!free(f.c, 0.8) || doorsNear(f.c)) continue;
+      if (!roadsideFree(f.c, 0.8) || doorsNear(f.c)) continue;
       const heap = new Kit();
       heap.add(new THREE.IcosahedronGeometry(1, 1), 0x5f5a50, [0, 0.1, 0], { scale: [1.1, 0.45, 0.9] });
       for (let j = 0; j < 9; j++) {
@@ -923,6 +941,7 @@ export function buildWorld(scene: THREE.Scene): World {
         heap.add(bag ? new THREE.IcosahedronGeometry(0.22, 0) : box(0.3, 0.12, 0.2), rng.pick(LITTER), [Math.cos(a) * r0, 0.35 + rng.range(0, 0.2), Math.sin(a) * r0 * 0.8], { rot: [rng.range(0, 3), rng.range(0, 3), 0] });
       }
       prop(heap, f);
+      if (made % 3 === 0) smokeSpots.push({ p: f.toWorld(0, 0.6, 0), kind: 'refuse' }); // someone's burning it
       collisions.circle(f.c, 0.9);
       footprints.add(f, 2.4, 2);
       made++;
@@ -933,7 +952,7 @@ export function buildWorld(scene: THREE.Scene): World {
       if (e.city || e.kind === 'main') continue;
       const s = rng.range(nodeR[e.a]! + 3, Math.max(nodeR[e.a]! + 3.1, roads.length(e) - nodeR[e.b]! - 3));
       const f = roads.roadside(e, s, rng.chance(0.5) ? 1 : -1, e.width / 2 + e.shoulder + 1);
-      if (!free(f.c, 1.2) || doorsNear(f.c)) continue;
+      if (!roadsideFree(f.c, 1.2) || doorsNear(f.c)) continue;
       prop(kioskKit(rng.pick(KIOSKS)), f);
       collisions.rect(f, 2.2, 1.6);
       footprints.add(f, 2.8, 2.2);
@@ -986,6 +1005,15 @@ export function buildWorld(scene: THREE.Scene): World {
       }
     }
   }
+  // A few columns of smoke from inside the bush (land clearing, burning).
+  for (let i = 0, made = 0; i < 60 && made < 3; i++) {
+    const p = wild();
+    if (!free(p, 2) || terrain.heightAt(p) > 0.5) continue;
+    smokeSpots.push({ p: p.clone().setLength(R + 0.3), kind: 'fire' });
+    staticParts.push(new Kit().add(new THREE.RingGeometry(0, 1.2, 10, 2), 0x3d3a34, [0, 0.03, 0], { rot: [-Math.PI / 2, 0, 0] }).bend(Frame.fromPoint(p)).geometry);
+    footprints.add(Frame.fromPoint(p), 3, 3);
+    made++;
+  }
   for (let i = 0; i < 260; i++) {
     const p = wild();
     if (free(p, 1.2)) rng.chance(0.55) ? veg.tree(p, rng.range(0.9, 1.3)) : veg.bush(p, rng.range(0.8, 1.3));
@@ -1001,9 +1029,59 @@ export function buildWorld(scene: THREE.Scene): World {
   veg.addTo(scene);
   signs.addTo(scene, rng);
 
+  // --- Floating rubbish and water hyacinth drifting downstream. ---
+  const riverLen = RIVER_SAMPLES.reduce((a, p, i) => (i ? a + p.distanceTo(RIVER_SAMPLES[i - 1]!) : 0), 0);
+  const riverAtU = (u: number, lateral: number, out: THREE.Vector3) => {
+    const f = THREE.MathUtils.clamp(u, 0, 0.9999) * (RIVER_SAMPLES.length - 1);
+    const i = Math.floor(f);
+    const a = RIVER_SAMPLES[i]!;
+    const b = RIVER_SAMPLES[i + 1]!;
+    out.copy(a).lerp(b, f - i);
+    const side = new THREE.Vector3().subVectors(b, a).cross(out.clone().normalize()).normalize();
+    return out.addScaledVector(side, lateral).setLength(R + 0.03);
+  };
+  const floaters: { u: number; lat: number; speed: number; spin: number; size: number }[] = [];
+  const debris = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.25, 0.6), toonMaterial(), 46);
+  const weeds = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1).scale(1, 0.32, 1), toonMaterial(), 16);
+  for (let i = 0; i < debris.count + weeds.count; i++) {
+    const weed = i >= debris.count;
+    floaters.push({
+      u: rng.next(),
+      lat: rng.range(-RIVER_HW + 0.5, RIVER_HW - 0.5),
+      speed: weed ? rng.range(0.08, 0.15) : rng.range(0.25, 0.45),
+      spin: rng.range(-0.6, 0.6),
+      size: weed ? rng.range(0.5, 1) : rng.range(0.12, 0.3),
+    });
+    if (weed) weeds.setColorAt(i - debris.count, new THREE.Color(rng.pick([0x4f8f55, 0x5f9e60, 0x6fae68])));
+    else debris.setColorAt(i, new THREE.Color(rng.pick(LITTER)));
+  }
+  for (const m of [debris, weeds]) {
+    m.frustumCulled = false;
+    m.raycast = () => {};
+    scene.add(m);
+  }
+  const _fp = new THREE.Vector3();
+  const _fo = new THREE.Object3D();
+  let clock = 0;
+
   const update = (dt: number) => {
     water.offset.y -= dt * 0.12; // flow south, downstream
+    clock += dt;
+    floaters.forEach((fl, i) => {
+      fl.u = (fl.u + (fl.speed * dt) / riverLen) % 1;
+      riverAtU(fl.u, fl.lat + Math.sin(clock * 0.4 + i) * 0.2, _fp);
+      _fo.position.copy(_fp);
+      _fo.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), _fp.clone().normalize());
+      _fo.rotateY(clock * fl.spin + i);
+      // Hidden where a bridge deck covers the water.
+      _fo.scale.setScalar(roads.near(_fp, 0.1) ? 0 : fl.size);
+      _fo.updateMatrix();
+      if (i < debris.count) debris.setMatrixAt(i, _fo.matrix);
+      else weeds.setMatrixAt(i - debris.count, _fo.matrix);
+    });
+    debris.instanceMatrix.needsUpdate = true;
+    weeds.instanceMatrix.needsUpdate = true;
   };
 
-  return { ground, places, occluders, collisions, hemi, sun, npcSpots, roads, update, heightAt: (p) => terrain.heightAt(p) };
+  return { ground, places, occluders, collisions, hemi, sun, npcSpots, roads, update, heightAt: (p) => terrain.heightAt(p), smokeSpots };
 }

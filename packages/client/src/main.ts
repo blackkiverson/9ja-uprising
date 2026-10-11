@@ -9,6 +9,7 @@ import { CameraRig, Intro, createCamera, fadeOccluders } from './scene/camera';
 import { Birds } from './scene/birds';
 import { Clouds } from './scene/clouds';
 import { Npcs } from './scene/npcs';
+import { Smoke } from './scene/smoke';
 import { Space } from './scene/space';
 import { Rng } from './scene/rng';
 import { PlayerAvatar } from './scene/player';
@@ -125,6 +126,8 @@ const busy = (e: (typeof world.roads.edges)[number]) => {
   const lambda = chartOf(e.pts[Math.floor(e.pts.length / 2)]!).lambda;
   return (e.kind === 'main' && lambda > -0.7 && lambda < 2.4) || (e.city && e.kind === 'street' && world.roads.edges.indexOf(e) % 3 === 0);
 };
+const smoke = new Smoke(scene);
+for (const s of world.smokeSpots) smoke.addSource(s.p, s.kind);
 const traffic = new Traffic(scene, world.roads, new Rng(77), busy, [placeById('food_stall').door, placeById('bus_stop').door]);
 const intro = new Intro();
 const introEl = document.getElementById('intro')!;
@@ -162,7 +165,7 @@ function nearestPlace(): Place | null {
 }
 
 // Dev-only hook for automated checks and console debugging.
-if (import.meta.env.DEV) Object.assign(window, { __9ja: { game, player, places, scene, renderer, camera, world, rig, THREE, teleportTo, intro, npcs, dialogue, traffic, findPath, music } });
+if (import.meta.env.DEV) Object.assign(window, { __9ja: { game, player, places, scene, renderer, camera, world, rig, THREE, teleportTo, intro, npcs, dialogue, traffic, findPath, music, smoke } });
 
 const clock = new THREE.Clock();
 const walk = new THREE.Vector3();
@@ -195,6 +198,7 @@ renderer.setAnimationLoop(() => {
   world.update(dt);
   space.update(dt, camera);
   traffic.update(dt, playing ? player.ground : null, camera);
+  smoke.update(dt, camera, playing ? player.ground : null, traffic.exhausts());
   birds.update(dt);
 
   // Lights ride with whatever we're looking at: the player in play, the planet's visible face on the title.
