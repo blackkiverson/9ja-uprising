@@ -10,3 +10,6 @@ dist/
 
 # Licensed music must never be committed to the public repo; add it at deploy time.
 packages/client/public/music/
+
+# Stray test screenshots at the repo root
+/*.png

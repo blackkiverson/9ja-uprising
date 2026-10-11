@@ -1,10 +1,14 @@
-import { STARTING_MONEY, MAX_ENERGY, type FoodId, type LocationId } from './data';
+import { STARTING_MONEY, MAX_ENERGY, type FoodId, type LocationId, type WeaponId } from './data';
 
 // One serialisable save object. In multiplayer the server holds this per player.
 export interface PlayerState {
-  version: 2;
+  version: 3;
   money: number;
   energy: number;
+  /** 0-100. Unused until fights, injuries and police arrive. */
+  health: number;
+  /** Equipped weapon. Everyone starts with their fists. */
+  weapon: WeaponId;
   location: LocationId;
   inventory: Partial<Record<FoodId, number>>;
   relationships: Record<string, number>;
@@ -20,9 +24,11 @@ export interface PlayerState {
 
 export function createPlayer(): PlayerState {
   return {
-    version: 2,
+    version: 3,
     money: STARTING_MONEY,
     energy: MAX_ENERGY,
+    health: 100,
+    weapon: 'fist',
     location: 'home',
     inventory: {},
     relationships: {},

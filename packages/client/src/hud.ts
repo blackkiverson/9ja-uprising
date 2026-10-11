@@ -1,4 +1,4 @@
-import { DANFO, FOOD, NPCS, OFFICE_SHIFT, formatClock, type Action, type FoodId, type NpcId } from '@9ja/shared';
+import { DANFO, FOOD, NPCS, OFFICE_SHIFT, WEAPONS, formatClock, type Action, type FoodId, type NpcId } from '@9ja/shared';
 import type { Game } from './game';
 import type { Place } from './scene/world';
 
@@ -29,10 +29,16 @@ export class Hud {
     const now = this.game.now();
     const busy = now.totalMinutes < s.busyUntil;
 
-    $('money').textContent = naira(s.money);
-    $('energy').textContent = `Energy ${s.energy}`;
+    // Bungee has no naira sign, so it is drawn in a font that does.
+    const money = $('money');
+    if (!money.firstChild) money.innerHTML = '<span class="naira">₦</span><span class="digits"></span>';
+    (money.lastChild as HTMLElement).textContent = String(Math.max(0, Math.floor(s.money))).padStart(8, '0');
     $('clock').textContent = formatClock(now.minuteOfDay);
-    $('day').textContent = `Day ${s.personalDay}`;
+    $('day').textContent = `DAY ${s.personalDay}`;
+    $('energy-fill').style.width = `${s.energy}%`;
+    $('health-fill').style.width = `${s.health}%`;
+    $('weapon-name').textContent = WEAPONS[s.weapon].name.toUpperCase();
+    $('weapon').title = WEAPONS[s.weapon].name;
 
     const place = $('place');
     place.style.display = near || busy ? 'block' : 'none';

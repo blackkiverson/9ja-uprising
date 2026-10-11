@@ -1,6 +1,12 @@
 // Tunable numbers for Prototype 0.1. Prices in naira.
 
 export type LocationId = 'home' | 'office' | 'food_stall' | 'bus_stop';
+export type WeaponId = 'fist';
+
+export const WEAPONS: Record<WeaponId, { name: string }> = {
+  fist: { name: 'Fist' },
+};
+
 export type FoodId = 'puff_puff' | 'gala' | 'rice_and_stew' | 'pure_water';
 
 export interface FoodItem {

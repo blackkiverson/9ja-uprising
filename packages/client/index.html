@@ -10,11 +10,29 @@
   <body>
     <div id="app"></div>
     <div id="hud">
-      <div class="stats">
-        <span id="money"></span>
-        <span id="energy"></span>
-        <span id="clock"></span>
-        <span id="day"></span>
+      <div id="status" aria-label="Player status">
+        <div id="weapon" title="Fist">
+          <svg viewBox="0 0 48 48" aria-hidden="true">
+            <!-- Original clenched-fist glyph, front view: four knuckles, thumb across, wrist. -->
+            <g fill="#f4f4ee">
+              <rect x="11" y="13" width="7" height="12" rx="3.5" />
+              <rect x="18.5" y="11" width="7" height="13" rx="3.5" />
+              <rect x="26" y="11.5" width="7" height="12.5" rx="3.5" />
+              <rect x="33.5" y="14" width="6" height="11" rx="3" />
+              <path d="M10 22h30v8c0 5-4 9-9 9h-9c-6 0-12-4-12-10z" />
+              <rect x="17" y="37" width="15" height="7" rx="1.5" />
+            </g>
+            <path d="M12 27c4-1 10-1 16 1" fill="none" stroke="#1d2423" stroke-width="2.2" stroke-linecap="round" />
+            <path d="M18 18.5v5M25.5 17v6M33 17.5v6" fill="none" stroke="#1d2423" stroke-width="1.6" stroke-linecap="round" />
+          </svg>
+          <span id="weapon-name">FIST</span>
+        </div>
+        <div class="readouts">
+          <div class="clock-row"><span id="clock"></span><span id="day"></span></div>
+          <div class="bar energy" title="Energy"><i id="energy-fill"></i></div>
+          <div class="bar health" title="Health"><i id="health-fill"></i></div>
+        </div>
+        <div id="money"></div>
       </div>
       <div class="bottom">
         <div id="place"></div>

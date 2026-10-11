@@ -9,8 +9,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #76b6b1; col
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif; touch-action: none; }
 #app, #app canvas { position: fixed; inset: 0; display: block; }
 #hud { position: fixed; inset: 0; pointer-events: none; padding: 12px 16px; }
-.stats { display: flex; gap: 8px; flex-wrap: wrap; }
-.stats span, #place, #toast { background: var(--paper); border: 2px solid var(--ink); border-radius: 10px;
+#place, #toast { background: var(--paper); border: 2px solid var(--ink); border-radius: 10px;
   padding: 6px 10px; font-weight: 600; font-size: 14px; }
 /* Label stacks above the buttons so it never hides behind them when they wrap on phones. */
 .bottom { position: absolute; left: 16px; right: 16px; bottom: 16px; display: flex; flex-direction: column;
@@ -80,14 +79,42 @@ body:not(.playing) #npc-tags { display: none; }
 body.talking #actions, body.talking #place { display: none !important; }
 
 /* Sound toggle (always visible, title screen included) and the now-playing label. */
-#sound { position: fixed; top: 12px; right: 16px; z-index: 6; width: 44px; height: 44px; display: grid; place-items: center;
+#sound { position: fixed; top: 12px; left: 16px; z-index: 6; width: 44px; height: 44px; display: grid; place-items: center;
   border: 2px solid var(--ink); border-radius: 10px; background: var(--paper); color: var(--ink); cursor: pointer;
   box-shadow: 0 3px 0 var(--ink); }
 #sound:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
 #sound .cross { display: none; }
 #sound.muted .cross { display: inline; }
 #sound.muted .waves { display: none; }
-#now-playing { position: fixed; top: 64px; right: 16px; z-index: 6; padding: 4px 10px; border: 2px solid var(--ink);
+#now-playing { position: fixed; top: 64px; left: 16px; z-index: 6; padding: 4px 10px; border: 2px solid var(--ink);
   border-radius: 8px; background: var(--paper); font-size: 12px; font-weight: 700; opacity: 0; transition: opacity 0.6s;
   pointer-events: none; }
 #now-playing.show { opacity: 1; }
+
+/* GTA San Andreas-style status block, top right: weapon box, clock, energy and health bars, money. */
+#status { position: absolute; top: 12px; right: 16px; display: grid; grid-template-columns: auto auto; gap: 6px 10px;
+  align-items: start; font-family: 'Bungee', system-ui, sans-serif; color: #eef0e6;
+  -webkit-text-stroke: 1.5px var(--ink); paint-order: stroke fill; text-shadow: 2px 2px 0 var(--ink); }
+#weapon { width: 64px; height: 64px; border: 3px solid var(--ink); border-radius: 10px;
+  background: radial-gradient(circle at 50% 40%, #3d4846, #1d2423);
+  box-shadow: 0 3px 0 var(--ink); position: relative; display: grid; place-items: center; }
+#weapon svg { width: 44px; height: 44px; margin-top: -6px; }
+#weapon-name { position: absolute; bottom: 2px; font-size: 10px; letter-spacing: 0.06em; color: #e3c24a; }
+.readouts { display: flex; flex-direction: column; gap: 6px; min-width: 132px; }
+.clock-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+#clock { font-size: 30px; line-height: 1; }
+#day { font-size: 12px; }
+.bar { height: 11px; border: 2px solid var(--ink); background: #3a4442; border-radius: 2px; overflow: hidden; }
+.bar i { display: block; height: 100%; transition: width 0.3s; }
+.bar.energy i { background: #d8dbd2; }
+.bar.health i { background: #c0453c; }
+#money { grid-column: 1 / -1; justify-self: end; font-size: 28px; line-height: 1; color: #6fbf5a; letter-spacing: 0.02em; }
+@media (max-width: 420px) {
+  #weapon { width: 52px; height: 52px; }
+  #weapon svg { width: 34px; height: 34px; }
+  #clock { font-size: 24px; }
+  #money { font-size: 22px; }
+  .readouts { min-width: 110px; }
+}
+#money .naira { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-weight: 900; margin-right: 2px; }
+#now-playing { max-width: calc(50vw - 40px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
