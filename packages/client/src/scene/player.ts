@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Collisions } from './collision';
 import { R } from './sphere';
+import { headMarker } from './markers';
 import { toonMesh } from './toon';
 
 const SPEED = 6; // metres per second
@@ -23,6 +24,8 @@ export class PlayerAvatar {
   private route: THREE.Vector3[] = [];
   private stuckTime = 0;
   private shadow: THREE.Mesh;
+  private marker = headMarker();
+  private clock = 0;
 
   constructor() {
     const body = toonMesh(new THREE.CapsuleGeometry(0.45, 1, 4, 8), 0x2e7d5b);
@@ -36,6 +39,8 @@ export class PlayerAvatar {
       new THREE.MeshBasicMaterial({ color: 0x1c2b1a, transparent: true, opacity: 0.25, depthWrite: false }),
     );
     this.root.add(body, head, afro, this.shadow);
+
+    this.root.add(this.marker);
 
     // X-ray silhouette: drawn only where something (tree, pole, cloud) is in front of the player.
     const ghost = new THREE.MeshBasicMaterial({
@@ -83,6 +88,17 @@ export class PlayerAvatar {
   push(fn: (pos: THREE.Vector3) => void): void {
     fn(this.pos);
     this.syncRoot();
+  }
+
+  /** Turn the head marker to face the camera so the chevron is always seen flat on. */
+  faceMarker(camera: THREE.Camera): void {
+    const local = this.root.worldToLocal(camera.position.clone());
+    this.marker.rotation.y = Math.atan2(local.x, local.z);
+  }
+
+  /** Hide the head marker (e.g. on the title screen). */
+  setMarkerVisible(v: boolean): void {
+    this.marker.visible = v;
   }
 
   jump(): void {
@@ -154,6 +170,10 @@ export class PlayerAvatar {
         }
       } else this.stuckTime = 0;
     }
+
+    // Bob the head marker gently and keep it facing the camera side (it billboards in syncRoot's frame).
+    this.clock += dt;
+    this.marker.position.y = this.marker.userData.base + Math.sin(this.clock * 3.2) * 0.12;
 
     if (this.vy !== 0 || this.height > 0) {
       this.vy -= GRAVITY * dt;

@@ -13,6 +13,7 @@ import { Smoke } from './scene/smoke';
 import { Space } from './scene/space';
 import { Rng } from './scene/rng';
 import { PlayerAvatar } from './scene/player';
+import { MoveMarker } from './scene/markers';
 import { findPath } from './scene/pathfind';
 import { chartOf, raySphere } from './scene/sphere';
 import { Traffic } from './scene/traffic';
@@ -64,6 +65,7 @@ window.addEventListener('keydown', (e) => {
 const isBusy = () => game.now().totalMinutes < game.state.busyUntil;
 
 // Click or tap to move: ray against the planet surface.
+const moveMarker = new MoveMarker(scene);
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const touches = new Map<number, { x: number; y: number }>();
@@ -76,6 +78,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   if (hit && !isBusy() && !intro.active && !dialogue.isOpen && touches.size === 0) {
     // Route round buildings and walls; fall back to walking straight if no route is found.
     player.followPath(findPath(world.collisions, player.ground, hit) ?? [hit]);
+    moveMarker.show(hit.clone().setLength(hit.length() + world.heightAt(hit)));
   }
 });
 
@@ -199,6 +202,9 @@ renderer.setAnimationLoop(() => {
   space.update(dt, camera);
   traffic.update(dt, playing ? player.ground : null, camera);
   smoke.update(dt, camera, playing ? player.ground : null, traffic.exhausts());
+  moveMarker.update(dt);
+  player.setMarkerVisible(playing);
+  player.faceMarker(camera);
   birds.update(dt);
 
   // Lights ride with whatever we're looking at: the player in play, the planet's visible face on the title.
