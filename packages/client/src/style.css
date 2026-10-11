@@ -78,3 +78,15 @@ body:not(.playing) #npc-tags { display: none; }
 #dlg-choices button:disabled { opacity: 0.6; cursor: not-allowed; }
 #dlg-choices small { display: block; font-weight: 600; color: #a2483f; margin-top: 2px; }
 body.talking #actions, body.talking #place { display: none !important; }
+
+/* Sound toggle (always visible, title screen included) and the now-playing label. */
+#sound { position: fixed; top: 12px; right: 16px; z-index: 6; width: 44px; height: 44px; display: grid; place-items: center;
+  border: 2px solid var(--ink); border-radius: 10px; background: var(--paper); color: var(--ink); cursor: pointer;
+  box-shadow: 0 3px 0 var(--ink); }
+#sound .cross { display: none; }
+#sound.muted .cross { display: inline; }
+#sound.muted .waves { display: none; }
+#now-playing { position: fixed; top: 64px; right: 16px; z-index: 6; padding: 4px 10px; border: 2px solid var(--ink);
+  border-radius: 8px; background: var(--paper); font-size: 12px; font-weight: 700; opacity: 0; transition: opacity 0.6s;
+  pointer-events: none; }
+#now-playing.show { opacity: 1; }

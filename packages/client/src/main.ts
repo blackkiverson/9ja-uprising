@@ -1,6 +1,7 @@
 import '@fontsource/bungee';
 import * as THREE from 'three';
 import { Game } from './game';
+import { Music } from './audio/music';
 import { Dialogue } from './dialogue';
 import { Hud } from './hud';
 import { Keyboard } from './input';
@@ -85,6 +86,35 @@ const endTouch = (e: PointerEvent) => touches.delete(e.pointerId);
 renderer.domElement.addEventListener('pointerup', endTouch);
 renderer.domElement.addEventListener('pointercancel', endTouch);
 
+// Soundtrack: starts on the first tap or key press (browsers block audio before that).
+const music = new Music();
+const soundBtn = document.getElementById('sound')!;
+const nowPlaying = document.getElementById('now-playing')!;
+let nowTimer = 0;
+music.onTrack = (title) => {
+  nowPlaying.textContent = `♪ ${title}`;
+  nowPlaying.classList.add('show');
+  clearTimeout(nowTimer);
+  nowTimer = window.setTimeout(() => nowPlaying.classList.remove('show'), 4000);
+};
+soundBtn.classList.toggle('muted', music.muted);
+const startMusic = () => music.start();
+window.addEventListener('pointerdown', startMusic);
+window.addEventListener('keydown', startMusic);
+soundBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  music.start();
+  music.toggleMute();
+  soundBtn.classList.toggle('muted', music.muted);
+});
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyM') {
+    music.toggleMute();
+    soundBtn.classList.toggle('muted', music.muted);
+  }
+  if (e.code === 'KeyN') music.skip();
+});
+
 // Title screen: whole planet turning, then Begin flies down to the player.
 const clouds = new Clouds(scene, new Rng(7));
 const space = new Space(scene, new Rng(11));
@@ -131,7 +161,7 @@ function nearestPlace(): Place | null {
 }
 
 // Dev-only hook for automated checks and console debugging.
-if (import.meta.env.DEV) Object.assign(window, { __9ja: { game, player, places, scene, renderer, camera, world, rig, THREE, teleportTo, intro, npcs, dialogue, traffic, findPath } });
+if (import.meta.env.DEV) Object.assign(window, { __9ja: { game, player, places, scene, renderer, camera, world, rig, THREE, teleportTo, intro, npcs, dialogue, traffic, findPath, music } });
 
 const clock = new THREE.Clock();
 const walk = new THREE.Vector3();

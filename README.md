@@ -19,7 +19,9 @@ npm run build
 | Click / tap | Walk to point |
 | WASD / arrow keys | Walk (screen-relative; camera never rotates) |
 | Space | Jump |
-| Mouse wheel / pinch / `+` `-` | Zoom |
+| E | Talk to the nearest NPC |
+| M / sound button | Music on/off |
+| N | Next track |
 
 ## Layout
 
@@ -37,3 +39,9 @@ npm run build
 - **Outlines:** inverted hull rather than a post-processing pass, for mid-range phone performance.
 - **World:** generated from a fixed seed (`scene/world.ts`), so every player gets the same Surulere. Leafy suburb compounds in the west blend into the commercial strip in the east. Vegetation is instanced and buildings are merged per building to keep draw calls low.
 - **Art pipeline:** Blender with flat colours, export GLB, toon material and outline applied at runtime.
+
+## Music
+
+Four looping tracks; track 0 always plays first (title screen and start of play), then the rest rotate with crossfades. Until tracks are licensed, each slot plays an original placeholder Afrobeats groove synthesised in `packages/client/src/audio/music.ts` (no licence needed).
+
+To use real tracks: put the files in `packages/client/public/music/` and set `src` on each entry in `TRACKS`. **Do not commit licensed audio**: the repo is public and that folder is git-ignored. Supply the files at deploy time instead (e.g. download them in the Pages workflow from private storage). Instrumental-only versions of commercial songs still need both the composition and recording licences.
