@@ -308,7 +308,8 @@ export function buildWorld(scene: THREE.Scene): World {
   const nearJunction = (p: THREE.Vector3, extra: number) => roads.nodes.some((q, i) => !roads.isolated.has(i) && q.distanceTo(p) < nodeR[i]! + extra);
   const free = (p: THREE.Vector3, pad = 0.3) => !roads.near(p, pad) && !onRiver(p, pad) && !footprints.contains(p, pad);
   /** For things that belong right beside a street (heaps, kiosks): off the road, but allowed close to it. */
-  const roadsideFree = (p: THREE.Vector3, pad: number) => !roads.near(p, 0.05) && !onRiver(p, pad) && !footprints.contains(p, pad);
+  // `onShoulder` lets the centre sit on the pavement/verge strip, just clear of the carriageway.
+  const roadsideFree = (p: THREE.Vector3, pad: number, onShoulder = 0) => !roads.near(p, 0.05 - onShoulder) && !onRiver(p, pad) && !footprints.contains(p, pad);
 
   // Road surfaces, gutters, pavements, lane dashes and junction plates: one draw call.
   {
@@ -551,7 +552,7 @@ export function buildWorld(scene: THREE.Scene): World {
     // Steam and smoke off Mama Nkechi's pots.
     smokeSpots.push({ p: stall.toWorld(-1, 1.5, 1.4), kind: 'cook' }, { p: stall.toWorld(0.6, 1.45, 1.4), kind: 'cook' });
     for (const ds of [-8, 8]) {
-      const f = roadsideOf(mainEdge, HUB_S + ds, -1, FRONT + 1.6).frame;
+      const f = roadsideOf(mainEdge, HUB_S + ds, -1, MAIN_HW + 0.95).frame;
       prop(kioskKit(rng.pick(KIOSKS)), f);
       collisions.rect(f, 2.2, 1.6);
       footprints.add(f, 2.8, 2.2);
@@ -930,8 +931,9 @@ export function buildWorld(scene: THREE.Scene): World {
       const len = roads.length(e);
       const atEnd = rng.chance(0.6);
       const s = atEnd ? (rng.chance(0.5) ? nodeR[e.a]! + 2 : len - nodeR[e.b]! - 2) : rng.range(3, Math.max(3.1, len - 3));
-      const f = roads.roadside(e, s, rng.chance(0.5) ? 1 : -1, e.width / 2 + e.shoulder + 0.6);
-      if (!roadsideFree(f.c, 0.8) || doorsNear(f.c)) continue;
+      // Dumped right at the kerb, spilling onto the gutter edge.
+      const f = roads.roadside(e, s, rng.chance(0.5) ? 1 : -1, e.width / 2 + 1);
+      if (!roadsideFree(f.c, 0.6, e.shoulder + 0.4) || doorsNear(f.c)) continue;
       const heap = new Kit();
       heap.add(new THREE.IcosahedronGeometry(1, 1), 0x5f5a50, [0, 0.1, 0], { scale: [1.1, 0.45, 0.9] });
       for (let j = 0; j < 9; j++) {
@@ -947,12 +949,12 @@ export function buildWorld(scene: THREE.Scene): World {
       made++;
     }
     // Kiosks dotted along suburban streets.
-    for (let i = 0, made = 0; i < 200 && made < 10; i++) {
+    for (let i = 0, made = 0; i < 300 && made < 16; i++) {
       const e = rng.pick(roads.edges);
-      if (e.city || e.kind === 'main') continue;
       const s = rng.range(nodeR[e.a]! + 3, Math.max(nodeR[e.a]! + 3.1, roads.length(e) - nodeR[e.b]! - 3));
-      const f = roads.roadside(e, s, rng.chance(0.5) ? 1 : -1, e.width / 2 + e.shoulder + 1);
-      if (!roadsideFree(f.c, 1.2) || doorsNear(f.c)) continue;
+      // Kiosks sit flush against the road edge, facing the traffic.
+      const f = roads.roadside(e, s, rng.chance(0.5) ? 1 : -1, e.width / 2 + 0.95);
+      if (!roadsideFree(f.c, 0.6, e.shoulder + 0.4) || doorsNear(f.c)) continue;
       prop(kioskKit(rng.pick(KIOSKS)), f);
       collisions.rect(f, 2.2, 1.6);
       footprints.add(f, 2.8, 2.2);
