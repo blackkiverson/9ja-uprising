@@ -74,6 +74,8 @@ const _p = new THREE.Vector3();
 const _o = new THREE.Object3D();
 const _l = new THREE.Matrix4();
 const _red = new THREE.Color();
+/** Agbero chase speed, m/s: just under the player's 6, so it's a real race. */
+const AGBERO_RUN = 5.1;
 const RED = new THREE.Color(0xe0281c);
 const _t = new THREE.Matrix4();
 
@@ -518,7 +520,9 @@ export class Traffic {
       const sway = ag.moving ? 0 : Math.sin(this.t * 1.1 + ag.phase) * 0.35;
       const face = ag.face.clone().applyAxisAngle(up, sway);
       _x.crossVectors(up, face).normalize();
-      const at = ag.moving ? ag.p.clone().addScaledVector(up, Math.abs(Math.sin(this.t * 8 + ag.phase)) * 0.07) : ag.p;
+      // Running gait when chasing, a stroll back to their spot.
+      const chasing = ag.state === 'approach';
+      const at = ag.moving ? ag.p.clone().addScaledVector(up, Math.abs(Math.sin(this.t * (chasing ? 15 : 8) + ag.phase)) * (chasing ? 0.12 : 0.07)) : ag.p;
       _m.makeBasis(_x, up, face).setPosition(at);
       if (ag.state === 'approach') {
         // Marked out in red while they're coming for you.
@@ -543,7 +547,8 @@ export class Traffic {
 
   /**
    * Agbero behaviour: come for anyone who walks near their spot, crowd round them, and give up
-   * (with a parting shot) if they get away. They walk slower than the player, so running works.
+   * (with a parting shot) if they get away. They run at nearly the player's speed (6 m/s), so
+   * escaping means legging it straight away, not strolling off.
    */
   private hustle(ag: Agbero, dt: number, target: THREE.Vector3 | null): void {
     const homeD = target ? ag.home.distanceTo(target) : Infinity;
@@ -562,7 +567,7 @@ export class Traffic {
     ag.moving = false;
     if (dist > stop) {
       to.normalize();
-      ag.p.addScaledVector(to, Math.min(dist - stop, (ag.state === 'approach' ? 2.6 : 1.6) * dt)).setLength(R);
+      ag.p.addScaledVector(to, Math.min(dist - stop, (ag.state === 'approach' ? AGBERO_RUN : 1.6) * dt)).setLength(R);
       // Don't all pile onto the same spot.
       for (const o of this.agberos) {
         if (o === ag || o.state === 'idle') continue;

@@ -13,7 +13,7 @@ export const TIPS = {
   clinic: { title: 'Mercy Clinic', body: 'Pay to get health back: quick first aid, or full treatment priced by how hurt you are.' },
   traffic: { title: 'Nobody brakes for you', body: 'Cars, danfos and kekes will not stop. Getting hit costs health; at zero you wake up at the clinic.' },
   night: { title: 'Night falls', body: 'Where the street lights work, it is busy and safe. Where they are dead, agberos gather. Watch where you walk.' },
-  agbero: { title: 'Agberos!', body: 'Red ring means they are coming for you. Run (they are slower than you), or settle them for ₦500 and they leave you alone till morning. Get caught and they push you down or rob you.' },
+  agbero: { title: 'Agberos!', body: 'Red ring means they are coming for you. Run straight away (they are nearly as fast as you), or settle them for ₦500 and they leave you alone till morning. Get caught and they push you down or rob you.' },
 } as const;
 
 export type TipId = keyof typeof TIPS;
