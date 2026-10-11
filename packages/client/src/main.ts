@@ -157,6 +157,17 @@ document.getElementById('begin')!.addEventListener('click', startGame);
 window.addEventListener('keydown', (e) => {
   if (intro.active && (e.code === 'Enter' || e.code === 'Space')) startGame();
 });
+// ?time=07:00 jumps the personal clock forward to that time, then drops the parameter so a
+// reload doesn't skip another day.
+{
+  const params = new URLSearchParams(location.search);
+  const m = /^(\d{1,2}):?(\d{2})?$/.exec(params.get('time') ?? '');
+  if (m && Number(m[1]) < 24) {
+    game.skipTo(Number(m[1]) * 60 + Number(m[2] ?? 0));
+    params.delete('time');
+    history.replaceState(null, '', `${location.pathname}${params.size ? `?${params}` : ''}${location.hash}`);
+  }
+}
 if (new URLSearchParams(location.search).has('skipIntro')) {
   intro.skip();
   introEl.classList.add('leaving');
@@ -230,7 +241,7 @@ const onStruck = (vehicle: 'car' | 'danfo' | 'keke', speed: number) => {
   hurtTimer = window.setTimeout(() => document.body.classList.remove('hurt'), 700);
   if (r.knockedOut) {
     dialogue.close();
-    teleportTo(placeById('home').door);
+    teleportTo(placeById('clinic').door);
     rig.update(player.ground, 0, true);
   }
 };

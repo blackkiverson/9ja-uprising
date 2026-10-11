@@ -81,10 +81,15 @@ const FACES: Draw[] = [
   glyphs(11),
   glyphs(29),
   glyphs(53),
-  glyphs(97),
+  (g, f) => {
+    text(g, f, ['', 'MERCY', 'CLINIC'], '#a2483f', '#f1f3ec', 40);
+    g.fillStyle = '#c0453c';
+    g.fillRect(CELL / 2 - 13, 14, 26, 62);
+    g.fillRect(CELL / 2 - 31, 32, 62, 26);
+  },
 ];
 export const SIGN_COUNT = FACES.length;
-export const SIGN = { left: 0, right: 1, noParking: 2, slow: 3, postNoBill: 4, notForSale: 5, beware419: 6, surulere: 7, ojuelegba: 8, provisions: 9, amala: 10, noSwimming: 11 } as const;
+export const SIGN = { left: 0, right: 1, noParking: 2, slow: 3, postNoBill: 4, notForSale: 5, beware419: 6, surulere: 7, ojuelegba: 8, provisions: 9, amala: 10, noSwimming: 11, clinic: 15 } as const;
 
 function drawAtlas(c: HTMLCanvasElement, font: string): void {
   const g = c.getContext('2d')!;

@@ -1,6 +1,6 @@
 // Tunable numbers for Prototype 0.1. Prices in naira.
 
-export type LocationId = 'home' | 'office' | 'food_stall' | 'bus_stop';
+export type LocationId = 'home' | 'office' | 'food_stall' | 'bus_stop' | 'clinic';
 export type WeaponId = 'fist';
 
 export const WEAPONS: Record<WeaponId, { name: string }> = {
@@ -45,8 +45,16 @@ export const VEHICLE_HIT: Record<VehicleKind, { name: string; damage: number; to
 };
 /** Below this speed (m/s) a vehicle only shoves you aside. */
 export const HIT_MIN_SPEED = 1.5;
-/** Health hits zero: you wake up at home, patched up, with a bill. */
+/** Health hits zero: you wake up at the clinic, patched up, with a bill. */
 export const KNOCKOUT = { health: 50, bill: 2500, minutes: 120 };
+
+/** Mercy Clinic: pay to get health back. Full treatment takes time (skippable). */
+export type TreatmentId = 'first_aid' | 'full';
+export const CLINIC: Record<TreatmentId, { name: string; heal: number; price: number; minutes: number }> = {
+  first_aid: { name: 'First aid', heal: 25, price: 1500, minutes: 0 },
+  // Price is per health point restored, so a small top-up costs little.
+  full: { name: 'Full treatment', heal: 100, price: 70, minutes: 60 },
+};
 
 /** Sleep: allowed in the evening or when exhausted, and you wake at this minute of the day. */
 export const SLEEP = { from: 19 * 60, until: 5 * 60, tiredBelow: 40, wakeAt: 6 * 60 + 30 };

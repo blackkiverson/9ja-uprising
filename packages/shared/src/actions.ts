@@ -1,5 +1,5 @@
 import { MINUTES_PER_DAY, formatClock, type WorldTime } from './clock';
-import { DANFO, FOOD, HIT_MIN_SPEED, KNOCKOUT, MAX_ENERGY, OFFICE_SHIFT, SLEEP, VEHICLE_HIT, type FoodId, type LocationId, type VehicleKind } from './data';
+import { CLINIC, DANFO, FOOD, HIT_MIN_SPEED, KNOCKOUT, MAX_ENERGY, OFFICE_SHIFT, SLEEP, VEHICLE_HIT, type FoodId, type LocationId, type TreatmentId, type VehicleKind } from './data';
 import { applyChoice, checkChoice, type NpcId } from './dialogue';
 import type { PlayerState } from './state';
 
@@ -13,7 +13,8 @@ export type Action =
   | { type: 'relationship'; npc: string; delta: number }
   | { type: 'dialogue'; npc: NpcId; node: string; choice: number }
   | { type: 'hit_by_vehicle'; vehicle: VehicleKind; speed: number }
-  | { type: 'fast_forward' };
+  | { type: 'fast_forward' }
+  | { type: 'treat'; treatment: TreatmentId };
 
 export type ActionResult =
   | { ok: true; state: PlayerState; message: string; knockedOut?: boolean; skipped?: number }
@@ -109,6 +110,22 @@ export function applyAction(prev: PlayerState, action: Action, now: WorldTime): 
       return { ok: true, state: s, message: applyChoice(s, action.npc, action.node, action.choice, now) };
     }
 
+    case 'treat': {
+      if (s.location !== 'clinic') return fail('You need to be at the clinic.');
+      if (s.health >= 100) return fail('Nurse says you are fine. Go home.');
+      const t = CLINIC[action.treatment];
+      const heal = Math.min(t.heal, 100 - s.health);
+      const price = action.treatment === 'full' ? heal * t.price : t.price;
+      if (s.money < price) return fail(`Not enough money for ${t.name.toLowerCase()} (₦${price.toLocaleString()}).`);
+      s.money -= price;
+      s.health += heal;
+      if (t.minutes) {
+        s.busyUntil = now.totalMinutes + t.minutes;
+        s.busyWith = 'treatment';
+      }
+      return { ok: true, state: s, message: `${t.name}. +${heal} health, -₦${price.toLocaleString()}` };
+    }
+
     case 'relationship': {
       const current = s.relationships[action.npc] ?? 0;
       s.relationships[action.npc] = Math.max(-100, Math.min(100, current + action.delta));
@@ -129,10 +146,10 @@ function hitByVehicle(prev: PlayerState, vehicle: VehicleKind, speed: number, no
   const bill = Math.min(s.money, KNOCKOUT.bill);
   s.health = KNOCKOUT.health;
   s.money -= bill;
-  s.location = 'home';
+  s.location = 'clinic';
   s.busyUntil = now.totalMinutes + KNOCKOUT.minutes;
   s.busyWith = 'recovering';
-  return { ok: true, state: s, message: `Knocked down by a ${hit.name.toLowerCase()}. You wake up at home. -₦${bill.toLocaleString()}`, knockedOut: true };
+  return { ok: true, state: s, message: `Knocked down by a ${hit.name.toLowerCase()}. You wake up at the clinic. -₦${bill.toLocaleString()}`, knockedOut: true };
 }
 
 /** Skip whatever you're busy with: the personal clock jumps to when it ends. */
@@ -141,7 +158,7 @@ function fastForward(prev: PlayerState, now: WorldTime): ActionResult {
   if (left <= 0) return fail('Nothing to skip.');
   const s = JSON.parse(JSON.stringify(prev)) as PlayerState;
   s.timeOffset += left;
-  const done = { work: 'Shift over.', travel: 'You have arrived.', recovering: 'Back on your feet.' }[s.busyWith ?? 'work'];
+  const done = { work: 'Shift over.', travel: 'You have arrived.', recovering: 'Back on your feet.', treatment: 'Discharged.' }[s.busyWith ?? 'work'];
   s.busyWith = null;
   return { ok: true, state: s, message: done, skipped: left };
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyAction } from './actions';
 import { MINUTES_PER_DAY, type WorldTime } from './clock';
-import { DANFO, FOOD, KNOCKOUT, OFFICE_SHIFT, STARTING_MONEY, VEHICLE_HIT } from './data';
+import { CLINIC, DANFO, FOOD, KNOCKOUT, OFFICE_SHIFT, STARTING_MONEY, VEHICLE_HIT } from './data';
 import { createPlayer, type PlayerState } from './state';
 
 const at = (day: number, minuteOfDay: number): WorldTime => ({
@@ -93,14 +93,28 @@ describe('applyAction', () => {
     expect(applyAction(p, { type: 'hit_by_vehicle', vehicle: 'car', speed: 0.5 }, at(1, 600)).ok).toBe(false);
   });
 
-  it('knocks you out at zero health: home, patched up, billed', () => {
+  it('knocks you out at zero health: clinic, patched up, billed', () => {
     const p = { ...createPlayer(), health: 5, location: 'office' as const };
     const r = applyAction(p, { type: 'hit_by_vehicle', vehicle: 'car', speed: 8 }, at(1, 600));
     expect(r.ok && r.knockedOut).toBe(true);
     const after = ok(r);
     expect(after.health).toBe(KNOCKOUT.health);
-    expect(after.location).toBe('home');
+    expect(after.location).toBe('clinic');
     expect(after.money).toBe(STARTING_MONEY - KNOCKOUT.bill);
     expect(after.busyUntil).toBe(at(1, 600).totalMinutes + KNOCKOUT.minutes);
+  });
+
+  it('heals at the clinic for money', () => {
+    const p = { ...createPlayer(), location: 'clinic' as const, health: 40 };
+    const aid = ok(applyAction(p, { type: 'treat', treatment: 'first_aid' }, at(1, 600)));
+    expect(aid.health).toBe(65);
+    expect(aid.money).toBe(STARTING_MONEY - CLINIC.first_aid.price);
+    // Full treatment charges per point restored and keeps you a while.
+    const full = ok(applyAction(aid, { type: 'treat', treatment: 'full' }, at(1, 601)));
+    expect(full.health).toBe(100);
+    expect(full.money).toBe(aid.money - 35 * CLINIC.full.price);
+    expect(full.busyWith).toBe('treatment');
+    expect(applyAction({ ...full, busyUntil: 0 }, { type: 'treat', treatment: 'first_aid' }, at(1, 700)).ok).toBe(false);
+    expect(applyAction({ ...p, location: 'home' as const }, { type: 'treat', treatment: 'first_aid' }, at(1, 600)).ok).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { DANFO, FOOD, NPCS, OFFICE_SHIFT, WEAPONS, formatClock, type Action, type ActionResult, type FoodId, type NpcId } from '@9ja/shared';
+import { CLINIC, DANFO, FOOD, NPCS, OFFICE_SHIFT, WEAPONS, formatClock, type Action, type ActionResult, type FoodId, type NpcId, type TreatmentId } from '@9ja/shared';
 import type { Game } from './game';
 import type { Place } from './scene/world';
 
@@ -76,7 +76,7 @@ export class Hud {
     };
 
     if (busy) {
-      const label = { work: 'Fast forward to end of shift', travel: 'Skip the ride', recovering: 'Skip recovery' }[s.busyWith ?? 'work'];
+      const label = { work: 'Fast forward to end of shift', travel: 'Skip the ride', recovering: 'Skip recovery', treatment: 'Skip treatment' }[s.busyWith ?? 'work'];
       add(`⏩ ${label}`, { type: 'fast_forward' });
       return;
     }
@@ -100,6 +100,15 @@ export class Hud {
           add(`${f.name} ${naira(f.price)}`, { type: 'buy_food', item: id as FoodId });
         }
         break;
+      case 'clinic': {
+        const missing = 100 - s.health;
+        for (const [id, t] of Object.entries(CLINIC)) {
+          const price = id === 'full' ? missing * t.price : t.price;
+          const heal = Math.min(t.heal, missing);
+          add(missing ? `${t.name} +${heal} (${naira(price)})` : `${t.name}`, { type: 'treat', treatment: id as TreatmentId });
+        }
+        break;
+      }
       case 'bus_stop':
         add(`Danfo to office (${naira(DANFO.fare)})`, { type: 'danfo', to: 'office' }, this.onDanfo);
         break;

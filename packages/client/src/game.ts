@@ -50,6 +50,22 @@ export class Game {
     return result;
   }
 
+  /**
+   * Testing aid (?time=07:00): move the personal clock forward to the next given time of day.
+   * Forward only, like every other skip. Not a rule: the multiplayer server won't offer it.
+   */
+  skipTo(minuteOfDay: number): number {
+    const minutes = (((minuteOfDay - this.now().minuteOfDay) % 1440) + 1440) % 1440;
+    this.state = { ...this.state, timeOffset: this.state.timeOffset + minutes };
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(this.state));
+    } catch {
+      // Ignore: the game still runs without persistence.
+    }
+    this.listeners.forEach((fn) => fn());
+    return minutes;
+  }
+
   onChange(fn: () => void): void {
     this.listeners.add(fn);
   }

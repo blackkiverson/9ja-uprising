@@ -26,7 +26,7 @@ export interface PlayerState {
   timeOffset: number;
 }
 
-export type BusyWith = 'work' | 'travel' | 'recovering';
+export type BusyWith = 'work' | 'travel' | 'recovering' | 'treatment';
 
 export function createPlayer(): PlayerState {
   return {

@@ -293,6 +293,7 @@ export function buildWorld(scene: THREE.Scene): World {
     { s: HUB_S - 22, side: -1 as const, dist: FRONT + 10.5, r: 11 }, // home compound (set back so the gate has a verge)
     { s: HUB_S + 22, side: -1 as const, dist: FRONT + 9.5, r: 11 }, // church
     { s: HUB_S - 34, side: 1 as const, dist: FRONT + 7, r: 9 }, // mosque
+    { s: HUB_S + 36, side: -1 as const, dist: FRONT + 5.5, r: 10 }, // clinic
   ].map((r) => ({ ...r, c: roadsideOf(mainEdge, r.s, r.side, r.dist).frame.c }));
   const nearReserved = (p: THREE.Vector3, pad: number) => reserved.some((r) => r.c.distanceTo(p) < r.r + pad);
 
@@ -586,6 +587,13 @@ export function buildWorld(scene: THREE.Scene): World {
   const officeMesh = building(cityKit(rng, 10, 8, 4, 0xa9cfd6), office, 10, 8);
   places.push({ id: 'office', label: 'Office (Bode Thomas St)', door: office.toWorld(0, 0, 4.8) });
   compound(site(3).frame, 16, 15, true);
+  {
+    // Mercy Clinic: a small whitewashed private clinic with its sign over the door.
+    const clinic = site(6).frame;
+    building(cityKit(rng, 9, 7, 2, 0xe6ebe4), clinic, 9, 7);
+    signs.painted(subFrame(clinic, 0, 3.52).matrix(0, 4.3, 0), SIGN.clinic, 3);
+    places.push({ id: 'clinic', label: 'Mercy Clinic', door: clinic.toWorld(0, 0, 4.6) });
+  }
   {
     // Church and mosque face the main road. Fictional congregations.
     const church = site(4).frame;
@@ -901,8 +909,8 @@ export function buildWorld(scene: THREE.Scene): World {
       footprints.add(f, 1.8, 1);
     };
     const doorsNear = (q: THREE.Vector3) => [...gates, ...places.map((pl) => pl.door)].some((d) => d.distanceTo(q) < 3.2);
-    const cityFaces = [SIGN.noParking, SIGN.postNoBill, SIGN.slow, SIGN.provisions, SIGN.amala, SIGN.beware419, 12, 13, 14, 15];
-    const suburbFaces = [SIGN.left, SIGN.right, SIGN.slow, SIGN.surulere, SIGN.beware419, SIGN.postNoBill, 12, 13, 14, 15];
+    const cityFaces = [SIGN.noParking, SIGN.postNoBill, SIGN.slow, SIGN.provisions, SIGN.amala, SIGN.beware419, 12, 13, 14, 12];
+    const suburbFaces = [SIGN.left, SIGN.right, SIGN.slow, SIGN.surulere, SIGN.beware419, SIGN.postNoBill, 12, 13, 14, 12];
     const placeSign = (e: RoadEdge, s: number, sideSign: 1 | -1, faces: number[], wide: boolean) => {
       const f = roads.roadside(e, s, sideSign, e.width / 2 + e.shoulder + 0.7);
       if (footprints.contains(f.c, 0.5) || roads.near(f.c, 0.05) || onRiver(f.c, 0.8) || doorsNear(f.c)) return false;
