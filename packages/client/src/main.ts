@@ -2,6 +2,7 @@ import '@fontsource/bungee';
 import * as THREE from 'three';
 import { AGBERO, AGBERO_LINES, DANFO_ROUTES, agberosSettled } from '@9ja/shared';
 import { Bubbles } from './bubbles';
+import { Tips, type TipId } from './tips';
 import { Game } from './game';
 import { Music } from './audio/music';
 import { Dialogue } from './dialogue';
@@ -271,6 +272,7 @@ const onStruck = (vehicle: 'car' | 'danfo' | 'keke', speed: number) => {
   player.jump();
   hud.toast(r.message);
   hurt(r.knockedOut === true);
+  tips.trigger('traffic');
 };
 
 /** Red flash and health-bar shake; a knockout wakes you at the clinic. */
@@ -291,6 +293,8 @@ function hurt(knockedOut: boolean): void {
 // --- Agberos: they close in after dark, shout, and rough you up if you hang about without
 // settling them. Settling (₦500) buys peace till morning. Running works: they're slower. ---
 const bubbles = new Bubbles(document.getElementById('bubbles')!);
+const tips = new Tips(document.getElementById('tip')!);
+const PLACE_TIPS: Partial<Record<Place['id'], TipId>> = { bus_stop: 'danfo', market: 'danfo', office: 'work', food_stall: 'food', home: 'sleep', clinic: 'clinic' };
 const pick = <T,>(list: readonly T[]) => list[Math.floor(Math.random() * list.length)]!;
 let gripTime = 0;
 let nextShout = 0;
@@ -311,6 +315,7 @@ function updateAgberos(dt: number, active: boolean): void {
   harassed = grip.length > 0;
   nextShout -= dt;
   roughCooldown -= dt;
+  if (closing.length) tips.trigger('agbero');
   if (closing.length && nextShout <= 0) {
     bubbles.say(pick(closing), pick(harassed ? AGBERO_LINES.grip : AGBERO_LINES.approach));
     nextShout = 1.6 + Math.random() * 1.4;
@@ -421,6 +426,13 @@ renderer.setAnimationLoop(() => {
   document.body.classList.toggle('playing', playing);
   document.body.classList.toggle('talking', dialogue.isOpen);
   document.body.classList.toggle('lapse', lapse !== null);
+  // First-time info cards for whatever the player has just run into.
+  if (playing && !lapse && !rideTo) {
+    tips.trigger('move');
+    if (near && PLACE_TIPS[near.id]) tips.trigger(PLACE_TIPS[near.id]!);
+    if (nearNpc) tips.trigger('talk');
+    if (daylight.lamps > 0.6) tips.trigger('night');
+  }
   if (playing) hud.update(near, nearNpc, minute, harassed ? { settle: AGBERO.settle, onSettle: settleAgberos } : null);
   renderer.render(scene, camera);
 });

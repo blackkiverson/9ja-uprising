@@ -155,3 +155,20 @@ body:not(.playing) #bubbles { display: none; }
 @keyframes bubble-pop { from { scale: 0.6; opacity: 0; } to { scale: 1; opacity: 1; } }
 
 #actions button.danger { background: #c0453c; color: #fff8f0; }
+
+/* First-time info cards. */
+#tip { position: fixed; top: 112px; right: 16px; width: min(320px, calc(100vw - 32px)); padding: 14px 16px 12px;
+  background: var(--paper); border: 3px solid var(--ink); border-radius: 12px; box-shadow: 0 4px 0 var(--ink);
+  pointer-events: auto; animation: tip-in 0.25s ease-out; z-index: 5; }
+#tip[hidden] { display: none; }
+body:not(.playing) #tip { display: none; }
+.tip-title { font-family: 'Bungee', system-ui, sans-serif; font-size: 16px; margin-bottom: 6px; }
+.tip-title::before { content: 'i'; display: inline-grid; place-items: center; width: 20px; height: 20px; margin-right: 8px;
+  border-radius: 50%; background: #e3c24a; border: 2px solid var(--ink); font: italic 800 13px Georgia, serif; vertical-align: 2px; }
+.tip-body { margin: 0 0 12px; font-size: 14px; line-height: 1.4; }
+.tip-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tip-foot label { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
+.tip-foot button { font: inherit; font-weight: 700; font-size: 14px; padding: 7px 14px; border: 2px solid var(--ink);
+  border-radius: 8px; background: #4f8f5a; color: #fff; cursor: pointer; box-shadow: 0 2px 0 var(--ink); }
+@keyframes tip-in { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (max-width: 520px) { #tip { top: auto; bottom: 120px; right: 16px; } }
