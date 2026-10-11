@@ -220,8 +220,21 @@ interface Playing {
   stop: () => void;
 }
 
+/**
+ * Optional local track list at /music/tracks.json (git-ignored, never deployed): lets you try real
+ * songs on your own machine without their names or files ever entering the public repo.
+ * Entries with a `slot` replace that track; the rest are added to the rotation.
+ */
+interface LocalTrack {
+  title: string;
+  src: string;
+  slot?: number;
+}
+
 export class Music {
   private ctx: AudioContext | null = null;
+  private tracks: Track[] = [...TRACKS];
+  private ready: Promise<void>;
   private master: GainNode | null = null;
   private current: Playing | null = null;
   private index = -1;
@@ -234,6 +247,19 @@ export class Music {
     } catch {
       // Storage blocked or corrupt: keep defaults.
     }
+    this.ready = fetch(`${base}music/tracks.json`)
+      .then((r) => (r.ok ? (r.json() as Promise<LocalTrack[]>) : []))
+      .then((local) => {
+        for (const lt of local) {
+          const fallback = this.tracks[lt.slot ?? 0]!.groove;
+          const track: Track = { title: lt.title, src: lt.src, groove: fallback };
+          if (lt.slot !== undefined && lt.slot < this.tracks.length) this.tracks[lt.slot] = track;
+          else this.tracks.push(track);
+        }
+      })
+      .catch(() => {
+        // No local list (the normal case on the public site).
+      });
   }
 
   get muted(): boolean {
@@ -251,7 +277,7 @@ export class Music {
     this.master = this.ctx.createGain();
     this.master.connect(comp).connect(this.ctx.destination);
     this.applyVolume();
-    this.play(0);
+    void this.ready.then(() => this.play(0));
   }
 
   toggleMute(): void {
@@ -275,9 +301,9 @@ export class Music {
 
   /** After track 0, pick any other track (never the same one twice in a row). */
   private nextIndex(): number {
-    if (TRACKS.length < 2) return 0;
+    if (this.tracks.length < 2) return 0;
     let i = this.index;
-    while (i === this.index || i === 0) i = 1 + Math.floor(Math.random() * (TRACKS.length - 1));
+    while (i === this.index || i === 0) i = 1 + Math.floor(Math.random() * (this.tracks.length - 1));
     // Now and then the starting groove comes back round.
     return Math.random() < 0.2 && this.index !== 0 ? 0 : i;
   }
@@ -286,7 +312,7 @@ export class Music {
     if (!this.ctx || !this.master) return;
     const ctx = this.ctx;
     this.index = i;
-    const track = TRACKS[i]!;
+    const track = this.tracks[i]!;
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0.0001, ctx.currentTime);
     gain.gain.linearRampToValueAtTime(1, ctx.currentTime + FADE);
@@ -328,6 +354,11 @@ export class Music {
       setTimeout(() => old.stop(), FADE * 1000 + 100);
     }
     this.play(i);
+  }
+
+  /** Jump to a specific track by index. */
+  playIndex(i: number): void {
+    if (this.ctx && i >= 0 && i < this.tracks.length) this.crossfadeTo(i);
   }
 
   /** Skip to another track (for testing, or a future radio button). */
