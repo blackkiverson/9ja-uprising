@@ -107,6 +107,11 @@ soundBtn.addEventListener('click', (e) => {
   music.toggleMute();
   soundBtn.classList.toggle('muted', music.muted);
 });
+document.getElementById('next-track')!.addEventListener('click', (e) => {
+  e.stopPropagation();
+  music.start();
+  music.skip();
+});
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyM') {
     music.toggleMute();

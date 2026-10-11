@@ -21,7 +21,7 @@ npm run build
 | Space | Jump |
 | E | Talk to the nearest NPC |
 | M / sound button | Music on/off |
-| N | Next track |
+| N / next button | Next track (in list order) |
 
 ## Layout
 

@@ -361,8 +361,8 @@ export class Music {
     if (this.ctx && i >= 0 && i < this.tracks.length) this.crossfadeTo(i);
   }
 
-  /** Skip to another track (for testing, or a future radio button). */
+  /** Next track in list order (the button and N key), wrapping round; auto-rotation stays varied. */
   skip(): void {
-    if (this.ctx) this.crossfadeTo(this.nextIndex());
+    if (this.ctx) this.crossfadeTo((this.index + 1) % this.tracks.length);
   }
 }

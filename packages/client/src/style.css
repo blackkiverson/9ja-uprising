@@ -80,9 +80,11 @@ body:not(.playing) #npc-tags { display: none; }
 body.talking #actions, body.talking #place { display: none !important; }
 
 /* Sound toggle (always visible, title screen included) and the now-playing label. */
-#sound { position: fixed; top: 12px; right: 16px; z-index: 6; width: 44px; height: 44px; display: grid; place-items: center;
+#sound, #next-track { position: fixed; top: 12px; right: 16px; z-index: 6; width: 44px; height: 44px; display: grid; place-items: center;
   border: 2px solid var(--ink); border-radius: 10px; background: var(--paper); color: var(--ink); cursor: pointer;
   box-shadow: 0 3px 0 var(--ink); }
+#next-track { right: 68px; }
+#sound:active, #next-track:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
 #sound .cross { display: none; }
 #sound.muted .cross { display: inline; }
 #sound.muted .waves { display: none; }
