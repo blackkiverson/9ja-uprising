@@ -538,6 +538,8 @@ export function buildWorld(scene: THREE.Scene): World {
     const door = f.toWorld(0, 0, hd + 1.6);
     gates.push(door);
     footprints.add(subFrame(f, 0, hd + 1.8), GAP + 1, 3.2);
+    // The whole yard is taken, so nothing later gets built across the walls or inside them.
+    footprints.add(f, w + 0.4, d + 0.4);
     if (isHome) places.push({ id: 'home', label: 'Home (family compound)', door });
   };
 
@@ -645,7 +647,7 @@ export function buildWorld(scene: THREE.Scene): World {
         const probe = [...front, ...rest];
         const why =
           front.some((q) => roads.near(q, -1.4)) || rest.some((q) => roads.near(q, -0.3)) ? 'road'
-          : probe.some((q) => footprints.contains(q, 0.3)) ? 'taken'
+          : footprints.overlaps(f, w, d, 0.3) ? 'taken'
           : probe.some((q) => onRiver(q, 0.5)) ? 'river' : '';
         if (why) {
           reject[why] = (reject[why] ?? 0) + 1;
@@ -678,7 +680,7 @@ export function buildWorld(scene: THREE.Scene): World {
     if (near.dist > 30) continue;
     const f = facing(p, near.toward);
     const probe = [[-w / 2, -d / 2], [w / 2, -d / 2], [-w / 2, d / 2], [w / 2, d / 2], [0, 0], [0, d / 2], [0, -d / 2]].map(([x, z]) => f.toWorld(x!, 0, z!));
-    if (!probe.every((q) => !roads.near(q, 0.5) && !footprints.contains(q, 0.6) && !onRiver(q, 0.5))) continue;
+    if (footprints.overlaps(f, w, d, 0.6) || !probe.every((q) => !roads.near(q, 0.5) && !onRiver(q, 0.5))) continue;
     if (city) building(cityKit(rng, w, d, rng.int(1, 3)), f, w, d);
     else building(houseKit(rng, w, d, rng.pick(['hip', 'gable', 'faceme'] as const)), f, w + 0.3, d + 0.3);
     footprints.add(f, w + 1.4, d + 1.4); // keep a footpath's width around each infill building

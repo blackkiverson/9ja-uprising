@@ -97,4 +97,46 @@ export class Footprints {
     }
     return false;
   }
+
+  /**
+   * True if a w x d rect in frame f overlaps any footprint grown by pad. A proper separating-axis
+   * test in each footprint's tangent plane, so thin walls and rotated plots can't slip between
+   * sample points.
+   */
+  overlaps(f: Frame, w: number, d: number, pad = 0): boolean {
+    const own = Math.hypot(w, d) / 2 + pad;
+    const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sz]) => f.toWorld((sx! * w) / 2, 0, (sz! * d) / 2));
+    const q: [number, number][] = [[0, 0], [0, 0], [0, 0], [0, 0]];
+    for (const r of this.rects) {
+      const reach = Math.sqrt(r.reach2) - 3 + own;
+      if (f.c.distanceToSquared(r.f.c) > reach * reach) continue;
+      corners.forEach((c, i) => {
+        r.f.toLocal(c, _l);
+        q[i]![0] = _l.x;
+        q[i]![1] = _l.z;
+      });
+      const hw = r.hw + pad;
+      const hd = r.hd + pad;
+      const ux = q[1]![0] - q[0]![0];
+      const uz = q[1]![1] - q[0]![1];
+      const axes: [number, number][] = [[1, 0], [0, 1], [ux, uz], [-uz, ux]];
+      let separated = false;
+      for (const [ax, az] of axes) {
+        const boxR = Math.abs(ax) * hw + Math.abs(az) * hd;
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (const [x, z] of q) {
+          const t = x * ax + z * az;
+          lo = Math.min(lo, t);
+          hi = Math.max(hi, t);
+        }
+        if (lo > boxR || hi < -boxR) {
+          separated = true;
+          break;
+        }
+      }
+      if (!separated) return true;
+    }
+    return false;
+  }
 }
