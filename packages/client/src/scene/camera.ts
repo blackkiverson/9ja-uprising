@@ -171,15 +171,15 @@ function segmentHitsBox(a: THREE.Vector3, b: THREE.Vector3, box: THREE.Box3): bo
  * Fades any building that sits between the camera and the player's feet or head.
  * Tested in each building's own flat frame, which is exact for a bent box.
  */
-export function fadeOccluders(camera: THREE.Camera, target: THREE.Vector3, occluders: THREE.Mesh[], dt: number): void {
+export function fadeOccluders(camera: THREE.Camera, target: THREE.Vector3, occluders: THREE.Mesh[], dt: number, inside: THREE.Mesh | null = null): void {
   const k = 1 - Math.exp(-14 * dt);
   const up = target.clone().normalize();
   const feet = target.clone().addScaledVector(up, 0.3);
   const head = target.clone().addScaledVector(up, 1.9);
   for (const obj of occluders) {
     const { frame, bounds } = obj.userData as { frame: import('./sphere').Frame; bounds: THREE.Box3 };
-    let hit = false;
-    if (frame.c.distanceToSquared(target) < 30 * 30) {
+    let hit = obj === inside;
+    if (!hit && frame.c.distanceToSquared(target) < 30 * 30) {
       _box.copy(bounds).expandByVector(new THREE.Vector3(0.8, 0, 0.8));
       frame.toLocal(camera.position, _a);
       hit = segmentHitsBox(_a, frame.toLocal(head, _b), _box) || segmentHitsBox(_a, frame.toLocal(feet, _b), _box);

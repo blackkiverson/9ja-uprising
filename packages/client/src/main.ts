@@ -8,6 +8,8 @@ import { Keyboard } from './input';
 import { CameraRig, Intro, createCamera, fadeOccluders } from './scene/camera';
 import { Birds } from './scene/birds';
 import { Clouds } from './scene/clouds';
+import { Collisions } from './scene/collision';
+import { Daylight } from './scene/daylight';
 import { Npcs } from './scene/npcs';
 import { Smoke } from './scene/smoke';
 import { Space } from './scene/space';
@@ -54,6 +56,7 @@ const hud = new Hud(
   game,
   () => teleportTo(placeById('office').door),
   (npc) => dialogue.open(npc),
+  (minutes) => startLapse(minutes),
 );
 dialogue = new Dialogue(game, (text) => hud.toast(text));
 // E talks to whoever is closest.
@@ -182,6 +185,31 @@ function nearestPlace(): Place | null {
 // Dev-only hook for automated checks and console debugging.
 if (import.meta.env.DEV) Object.assign(window, { __9ja: { game, player, places, scene, renderer, camera, world, rig, THREE, teleportTo, intro, npcs, dialogue, traffic, findPath, music, smoke } });
 
+const daylight = new Daylight(scene, world.hemi, world.sun);
+
+// --- Time-lapse: skipping time (fast-forward, sleep) races the sky through the hours skipped. ---
+// Timed on the real clock, not the frame delta (which is capped), so a slow frame can't drag it out.
+let lapse: { from: number; to: number; t: number; dur: number; start: number } | null = null;
+function startLapse(minutes: number): void {
+  const to = game.exactNow();
+  lapse = { from: to - minutes, to, t: 0, dur: THREE.MathUtils.clamp(2 + minutes / 150, 2.5, 6), start: performance.now() };
+  player.followPath([]);
+}
+/** 0 to 1 and back over the lapse: how hard the world is racing right now. */
+const lapseRush = () => (lapse ? Math.sin(Math.PI * Math.min(1, lapse.t / lapse.dur)) : 0);
+const shownMinute = () => {
+  if (!lapse) return game.exactNow();
+  const t = Math.min(1, lapse.t / lapse.dur);
+  return THREE.MathUtils.lerp(lapse.from, lapse.to, t * t * (3 - 2 * t));
+};
+
+// --- At work: the office goes see-through and the player walks about inside until the shift ends. ---
+const office = world.interiors.office;
+const noWalls = new Collisions();
+let inOffice = false;
+let deskPause = 0;
+const atWork = () => game.state.busyWith === 'work' && game.state.location === 'office' && isBusy();
+
 const clock = new THREE.Clock();
 const walk = new THREE.Vector3();
 let hitCooldown = 0;
@@ -210,13 +238,30 @@ const onStruck = (vehicle: 'car' | 'danfo' | 'keke', speed: number) => {
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
   const playing = !intro.active;
-  const busy = isBusy() || !playing || dialogue.isOpen;
+  if (lapse && (lapse.t = (performance.now() - lapse.start) / 1000) >= lapse.dur) lapse = null;
+  const busy = isBusy() || !playing || dialogue.isOpen || lapse !== null;
   if (keyboard.consumeJump() && !busy) player.jump();
 
   // WASD is relative to the screen: W walks "up" the screen along the planet.
   const input = busy ? new THREE.Vector2() : keyboard.direction();
   walk.set(0, 0, 0).addScaledVector(rig.right, input.x).addScaledVector(rig.forward, -input.y);
-  player.update(dt, walk, world.collisions, world.heightAt);
+  // Keep strolling round the office through the time-lapse; walk out of the door once it ends.
+  const working = playing && (atWork() || (inOffice && lapse !== null));
+  if (working) {
+    inOffice = true;
+    deskPause -= dt;
+    if (player.idle && deskPause <= 0) {
+      const lx = (Math.random() - 0.5) * (office.w - 2.4);
+      const lz = (Math.random() - 0.5) * (office.d - 2.4);
+      player.moveTo(office.frame.toWorld(lx, 0, lz));
+      deskPause = 1 + Math.random() * 2.5;
+    }
+  } else if (inOffice) {
+    inOffice = false;
+    player.followPath([]);
+    teleportTo(placeById('office').door);
+  }
+  player.update(dt, walk, inOffice ? noWalls : world.collisions, world.heightAt);
   hitCooldown = Math.max(0, hitCooldown - dt);
   const struck = player.push((p) => {
     const hit = traffic.pushOut(p);
@@ -232,31 +277,33 @@ renderer.setAnimationLoop(() => {
   const ground = player.ground;
   if (playing) {
     rig.update(ground, dt);
-    fadeOccluders(camera, ground, world.occluders, dt);
+    fadeOccluders(camera, ground, world.occluders, dt, inOffice ? office.mesh : null);
   } else intro.update(dt, camera, rig);
-  clouds.update(dt, camera, playing ? ground : null);
+  // In a time-lapse the whole world races: clouds stream, traffic and crowds rush about.
+  const rush = lapseRush();
+  clouds.update(dt * (1 + rush * 30), camera, playing ? ground : null);
   const nearNpc = playing ? npcs.nearest(ground) : null;
   // Walking away ends the conversation.
   if (dialogue.isOpen && !nearNpc) dialogue.close();
   npcs.update(clock.elapsedTime, dt, playing ? ground : null, camera, !dialogue.isOpen);
   world.update(dt);
   space.update(dt, camera);
-  traffic.update(dt, playing ? player.ground : null, camera);
-  smoke.update(dt, camera, playing ? player.ground : null, traffic.exhausts());
+  for (let i = 0, n = 1 + Math.round(rush * 4); i < n; i++) traffic.update(dt, playing ? player.ground : null, camera);
+  smoke.update(dt * (1 + rush * 2), camera, playing ? player.ground : null, traffic.exhausts());
   moveMarker.update(dt);
   player.setMarkerVisible(playing);
   player.faceMarker(camera);
-  birds.update(dt);
+  birds.update(dt * (1 + rush * 3));
 
   // Lights ride with whatever we're looking at: the player in play, the planet's visible face on the title.
   const anchor = playing ? ground : camera.position.clone().setLength(ground.length());
-  const up = anchor.clone().normalize();
-  world.hemi.position.copy(up);
-  world.sun.position.copy(anchor).addScaledVector(up, 30).addScaledVector(rig.right, 18).addScaledVector(rig.forward, 8);
-  world.sun.target.position.copy(anchor);
+  const minute = shownMinute();
+  daylight.update(minute, anchor, rig.right, rig.forward);
+  space.setTones(daylight.rock, daylight.speck, daylight.haze);
 
   document.body.classList.toggle('playing', playing);
   document.body.classList.toggle('talking', dialogue.isOpen);
-  if (playing) hud.update(near, nearNpc);
+  document.body.classList.toggle('lapse', lapse !== null);
+  if (playing) hud.update(near, nearNpc, minute);
   renderer.render(scene, camera);
 });

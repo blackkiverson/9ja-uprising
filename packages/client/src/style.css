@@ -102,12 +102,18 @@ body:not(.playing) #exit { display: none; }
   box-shadow: 0 3px 0 var(--ink); position: relative; display: grid; place-items: center; }
 #weapon svg { width: 44px; height: 44px; margin-top: -6px; }
 #weapon-name { position: absolute; bottom: 2px; font-size: 10px; letter-spacing: 0.06em; color: #e3c24a; }
-.readouts { display: flex; flex-direction: column; gap: 6px; min-width: 132px; }
+.readouts { display: flex; flex-direction: column; gap: 6px; width: 150px; }
 .clock-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-#clock { font-size: 30px; line-height: 1; }
+#clock { font-size: 30px; line-height: 1; white-space: nowrap; }
+/* Bungee digits differ in width: give each its own fixed cell so nothing shifts as time ticks. */
+#clock span { display: inline-block; width: 0.66em; text-align: center; }
+#clock span.colon { width: 0.3em; }
 #day { font-size: 12px; }
 .bar { height: 11px; border: 2px solid var(--ink); background: #3a4442; border-radius: 2px; overflow: hidden; }
 .bar i { display: block; height: 100%; transition: width 0.3s; }
+/* Health is the long bar; energy (stamina) sits shorter above it, GTA SA style. */
+.bar.health { width: 100%; }
+.bar.energy { width: 68%; }
 .bar.energy i { background: #d8dbd2; }
 .bar.health i { background: #c0453c; }
 #money { grid-column: 1 / -1; justify-self: start; font-size: 28px; line-height: 1; color: #6fbf5a; letter-spacing: 0.02em; }
@@ -116,7 +122,7 @@ body:not(.playing) #exit { display: none; }
   #weapon svg { width: 34px; height: 34px; }
   #clock { font-size: 24px; }
   #money { font-size: 22px; }
-  .readouts { min-width: 110px; }
+  .readouts { width: 124px; }
 }
 #money .naira { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-weight: 900; margin-right: 2px; }
 #now-playing { max-width: calc(50vw - 40px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -128,3 +134,10 @@ body.hurt::after { animation: hurt-flash 0.7s ease-out; }
 body.hurt .bar.health { animation: hurt-shake 0.4s; }
 @keyframes hurt-flash { 0% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes hurt-shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+
+/* Time-lapse: cinematic bars slide in and the clock races in gold. */
+/* Drawn over the canvas but under the HUD. */
+#app::after { content: ''; position: fixed; inset: 0; pointer-events: none; border: 0 solid #10181a;
+  transition: border-width 0.5s ease; }
+body.lapse #app::after { border-width: 6vh 0; }
+body.lapse #clock { color: #e3c24a; }

@@ -26,6 +26,7 @@ export class Space {
   private speckDrift: Drifter[] = [];
   private haze = new THREE.Group();
   private t = 0;
+  private hazeMat!: THREE.MeshBasicMaterial;
 
   constructor(scene: THREE.Scene, rng: Rng) {
     const rockGeo = new THREE.DodecahedronGeometry(1, 0);
@@ -33,22 +34,25 @@ export class Space {
     this.rocks = new THREE.InstancedMesh(rockGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), ROCK_COUNT);
     this.rockHull = new THREE.InstancedMesh(hullGeometry(rockGeo), outlineMaterial(0.08), ROCK_COUNT);
     this.rockHull.instanceMatrix = this.rocks.instanceMatrix;
-    const rockTones = [0x8fcac3, 0x84c1ba, 0x6aa9a4, 0x9ad3cb, 0x5f9e99];
+    // Per-rock shade only; the hue comes from the material, which follows the time of day.
+    const rockShades = [1, 0.94, 0.78, 1.06, 0.7];
     for (let i = 0; i < ROCK_COUNT; i++) {
       this.drifters.push(this.drifter(rng, rng.range(R + 45, R + 130), rng.range(0.3, 2.2)));
-      this.rocks.setColorAt(i, new THREE.Color(rng.pick(rockTones)));
+      const k = rng.pick(rockShades);
+      this.rocks.setColorAt(i, new THREE.Color(k, k, k));
     }
 
     const SPECK_COUNT = 320;
     this.specks = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshBasicMaterial({ color: 0xffffff }), SPECK_COUNT);
     for (let i = 0; i < SPECK_COUNT; i++) {
       this.speckDrift.push(this.drifter(rng, rng.range(R + 40, R + 160), rng.range(0.12, 0.35)));
-      this.specks.setColorAt(i, new THREE.Color(rng.pick([0xa6dcd4, 0x96d0c8, 0xb8e4dd])));
+      const k = rng.pick([1, 0.92, 1.08]);
+      this.specks.setColorAt(i, new THREE.Color(k, k, k));
     }
 
     // Haze: a ring of soft lighter-teal puffs just behind the planet's edge, turned to face the
     // camera each frame, so it reads as a halo round the silhouette (and hides below the ground in play).
-    const hazeMat = new THREE.MeshBasicMaterial({ color: 0x8fd0c6, transparent: true, opacity: 0.5, depthWrite: false });
+    const hazeMat = (this.hazeMat = new THREE.MeshBasicMaterial({ color: 0x8fd0c6, transparent: true, opacity: 0.5, depthWrite: false }));
     for (let i = 0; i < 16; i++) {
       const a = (i / 16) * Math.PI * 2 + rng.range(-0.15, 0.15);
       const r = R + rng.range(2, 12);
@@ -79,6 +83,13 @@ export class Space {
       spin: new THREE.Vector3(rng.range(-0.4, 0.4), rng.range(-0.4, 0.4), rng.range(-0.4, 0.4)),
       scale,
     };
+  }
+
+  /** Colours for the time of day: blue-teal by day, sunset orange in the evening, deep blue at night. */
+  setTones(rock: THREE.Color, speck: THREE.Color, haze: THREE.Color): void {
+    (this.rocks.material as THREE.MeshBasicMaterial).color.copy(rock);
+    (this.specks.material as THREE.MeshBasicMaterial).color.copy(speck);
+    this.hazeMat.color.copy(haze);
   }
 
   update(dt: number, camera: THREE.Camera): void {

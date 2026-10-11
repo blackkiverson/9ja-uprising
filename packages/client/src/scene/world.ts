@@ -47,6 +47,8 @@ export interface World {
   /** Lights that follow the player so the area around them is always lit the same way. */
   hemi: THREE.HemisphereLight;
   sun: THREE.DirectionalLight;
+  /** Buildings the player spends time inside (walking about while busy). */
+  interiors: Record<'office', { frame: Frame; w: number; d: number; mesh: THREE.Mesh }>;
   /** Where each NPC stands (they face the player when near). */
   npcSpots: Record<NpcId, Frame>;
   /** The street web (also the future traffic graph). */
@@ -581,7 +583,7 @@ export function buildWorld(scene: THREE.Scene): World {
     }
   }
   const office = site(2).frame;
-  building(cityKit(rng, 10, 8, 4, 0xa9cfd6), office, 10, 8);
+  const officeMesh = building(cityKit(rng, 10, 8, 4, 0xa9cfd6), office, 10, 8);
   places.push({ id: 'office', label: 'Office (Bode Thomas St)', door: office.toWorld(0, 0, 4.8) });
   compound(site(3).frame, 16, 15, true);
   {
@@ -1087,5 +1089,6 @@ export function buildWorld(scene: THREE.Scene): World {
     weeds.instanceMatrix.needsUpdate = true;
   };
 
-  return { ground, places, occluders, collisions, hemi, sun, npcSpots, roads, update, heightAt: (p) => terrain.heightAt(p), smokeSpots };
+  const interiors = { office: { frame: office, w: 10, d: 8, mesh: officeMesh } };
+  return { ground, places, occluders, collisions, hemi, sun, npcSpots, roads, update, heightAt: (p) => terrain.heightAt(p), smokeSpots, interiors };
 }

@@ -1,5 +1,5 @@
-import type { WorldTime } from './clock';
-import { DANFO, FOOD, HIT_MIN_SPEED, KNOCKOUT, MAX_ENERGY, OFFICE_SHIFT, VEHICLE_HIT, type FoodId, type LocationId, type VehicleKind } from './data';
+import { MINUTES_PER_DAY, formatClock, type WorldTime } from './clock';
+import { DANFO, FOOD, HIT_MIN_SPEED, KNOCKOUT, MAX_ENERGY, OFFICE_SHIFT, SLEEP, VEHICLE_HIT, type FoodId, type LocationId, type VehicleKind } from './data';
 import { applyChoice, checkChoice, type NpcId } from './dialogue';
 import type { PlayerState } from './state';
 
@@ -12,10 +12,11 @@ export type Action =
   | { type: 'sleep' }
   | { type: 'relationship'; npc: string; delta: number }
   | { type: 'dialogue'; npc: NpcId; node: string; choice: number }
-  | { type: 'hit_by_vehicle'; vehicle: VehicleKind; speed: number };
+  | { type: 'hit_by_vehicle'; vehicle: VehicleKind; speed: number }
+  | { type: 'fast_forward' };
 
 export type ActionResult =
-  | { ok: true; state: PlayerState; message: string; knockedOut?: boolean }
+  | { ok: true; state: PlayerState; message: string; knockedOut?: boolean; skipped?: number }
   | { ok: false; reason: string };
 
 const fail = (reason: string): ActionResult => ({ ok: false, reason });
@@ -27,6 +28,7 @@ const fail = (reason: string): ActionResult => ({ ok: false, reason });
 export function applyAction(prev: PlayerState, action: Action, now: WorldTime): ActionResult {
   // Traffic doesn't wait for you to be free.
   if (action.type === 'hit_by_vehicle') return hitByVehicle(prev, action.vehicle, action.speed, now);
+  if (action.type === 'fast_forward') return fastForward(prev, now);
   if (now.totalMinutes < prev.busyUntil) {
     return fail(`Busy for another ${prev.busyUntil - now.totalMinutes} minutes.`);
   }
@@ -46,6 +48,7 @@ export function applyAction(prev: PlayerState, action: Action, now: WorldTime): 
       if (s.energy < OFFICE_SHIFT.energyCost) return fail('Too tired to work. Eat or sleep first.');
       s.energy -= OFFICE_SHIFT.energyCost;
       s.busyUntil = now.totalMinutes + OFFICE_SHIFT.durationMinutes;
+      s.busyWith = 'work';
       // A salary advance from Oga Bayo comes out of the next shift.
       const advance = s.flags.oga_advance === true ? 5000 : 0;
       s.flags.oga_advance = false;
@@ -80,16 +83,24 @@ export function applyAction(prev: PlayerState, action: Action, now: WorldTime): 
       s.energy -= DANFO.energyCost;
       s.location = action.to;
       s.busyUntil = now.totalMinutes + DANFO.durationMinutes;
+      s.busyWith = 'travel';
       return { ok: true, state: s, message: `Danfo to ${action.to.replace('_', ' ')}. -₦${DANFO.fare}` };
     }
 
     case 'sleep': {
       if (s.location !== 'home') return fail('You can only sleep at home.');
-      if (s.lastSleptWorldDay === now.day) return fail('You have already slept today.');
+      // Going to bed at 02:00 still counts as the night before.
+      const night = Math.floor((now.totalMinutes - SLEEP.until) / MINUTES_PER_DAY);
+      if (s.lastSleptWorldDay === night) return fail('You have already slept tonight.');
+      const evening = now.minuteOfDay >= SLEEP.from || now.minuteOfDay < SLEEP.until;
+      if (!evening && s.energy >= SLEEP.tiredBelow) return fail(`Too early to sleep. Come back after ${formatClock(SLEEP.from)}.`);
+      // Sleep through to the next morning: the personal clock jumps ahead.
+      const wake = now.minuteOfDay < SLEEP.wakeAt ? SLEEP.wakeAt - now.minuteOfDay : MINUTES_PER_DAY - now.minuteOfDay + SLEEP.wakeAt;
+      s.timeOffset += wake;
       s.energy = MAX_ENERGY;
       s.personalDay += 1;
-      s.lastSleptWorldDay = now.day;
-      return { ok: true, state: s, message: `Day ${s.personalDay}. You wake up rested.` };
+      s.lastSleptWorldDay = night;
+      return { ok: true, state: s, message: `Day ${s.personalDay}. You wake up rested.`, skipped: wake };
     }
 
     case 'dialogue': {
@@ -120,5 +131,17 @@ function hitByVehicle(prev: PlayerState, vehicle: VehicleKind, speed: number, no
   s.money -= bill;
   s.location = 'home';
   s.busyUntil = now.totalMinutes + KNOCKOUT.minutes;
+  s.busyWith = 'recovering';
   return { ok: true, state: s, message: `Knocked down by a ${hit.name.toLowerCase()}. You wake up at home. -₦${bill.toLocaleString()}`, knockedOut: true };
+}
+
+/** Skip whatever you're busy with: the personal clock jumps to when it ends. */
+function fastForward(prev: PlayerState, now: WorldTime): ActionResult {
+  const left = prev.busyUntil - now.totalMinutes;
+  if (left <= 0) return fail('Nothing to skip.');
+  const s = JSON.parse(JSON.stringify(prev)) as PlayerState;
+  s.timeOffset += left;
+  const done = { work: 'Shift over.', travel: 'You have arrived.', recovering: 'Back on your feet.' }[s.busyWith ?? 'work'];
+  s.busyWith = null;
+  return { ok: true, state: s, message: done, skipped: left };
 }

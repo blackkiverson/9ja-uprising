@@ -1,4 +1,4 @@
-import { applyAction, createPlayer, worldTime, type Action, type ActionResult, type PlayerState } from '@9ja/shared';
+import { applyAction, createPlayer, exactMinutes, worldTime, type Action, type ActionResult, type PlayerState } from '@9ja/shared';
 
 const SAVE_KEY = '9ja-save-v1';
 
@@ -7,9 +7,9 @@ function load(): PlayerState {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<Omit<PlayerState, 'version'>> & { version?: number };
-      // Older saves: v1 predates story flags, v2 predates health and weapons.
-      if (parsed.version !== undefined && parsed.version >= 1 && parsed.version <= 3) {
-        return { ...createPlayer(), ...parsed, flags: parsed.flags ?? {}, version: 3 } as PlayerState;
+      // Older saves: v1 predates story flags, v2 health and weapons, v3 the personal clock.
+      if (parsed.version !== undefined && parsed.version >= 1 && parsed.version <= 4) {
+        return { ...createPlayer(), ...parsed, flags: parsed.flags ?? {}, version: 4 } as PlayerState;
       }
     }
   } catch {
@@ -26,8 +26,14 @@ export class Game {
   state: PlayerState = load();
   private listeners = new Set<() => void>();
 
+  /** The player's personal time: world clock plus their offset. */
   now() {
-    return worldTime(Date.now());
+    return worldTime(Date.now(), this.state.timeOffset);
+  }
+
+  /** Fractional personal minutes, for smooth lighting. */
+  exactNow() {
+    return exactMinutes(Date.now(), this.state.timeOffset);
   }
 
   dispatch(action: Action): ActionResult {

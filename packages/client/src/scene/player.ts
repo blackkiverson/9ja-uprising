@@ -75,6 +75,11 @@ export class PlayerAvatar {
     this.stuckTime = 0;
   }
 
+  /** Not walking anywhere (no click target or route left). */
+  get idle(): boolean {
+    return !this.target;
+  }
+
   teleport(point: THREE.Vector3): void {
     // Keep any terrain height the caller passed; never go below the base sphere.
     this.pos.copy(point).setLength(Math.max(R, point.length()));

@@ -46,13 +46,35 @@ describe('applyAction', () => {
     expect(after.money).toBe(STARTING_MONEY - DANFO.fare);
   });
 
-  it('allows one sleep per world day and counts personal days', () => {
+  it('sleeps through to morning once a night and counts personal days', () => {
     const p = { ...createPlayer(), energy: 10 };
     const slept = ok(applyAction(p, { type: 'sleep' }, at(3, 22 * 60)));
     expect(slept.personalDay).toBe(2);
     expect(slept.energy).toBe(100);
-    expect(applyAction(slept, { type: 'sleep' }, at(3, 23 * 60)).ok).toBe(false);
+    expect(slept.timeOffset).toBe(8 * 60 + 30); // 22:00 to 06:30
+    // 01:00 is still the same night.
+    expect(applyAction(slept, { type: 'sleep' }, at(4, 60)).ok).toBe(false);
     expect(ok(applyAction(slept, { type: 'sleep' }, at(4, 22 * 60))).personalDay).toBe(3);
+  });
+
+  it('refuses sleep in the daytime unless exhausted', () => {
+    expect(applyAction(createPlayer(), { type: 'sleep' }, at(3, 12 * 60)).ok).toBe(false);
+    expect(applyAction({ ...createPlayer(), energy: 20 }, { type: 'sleep' }, at(3, 12 * 60)).ok).toBe(true);
+  });
+
+  it('fast-forwards to the end of a shift by moving the personal clock', () => {
+    const p = { ...createPlayer(), location: 'office' as const };
+    const working = ok(applyAction(p, { type: 'work_shift' }, at(5, 8 * 60)));
+    expect(working.busyWith).toBe('work');
+    const r = applyAction(working, { type: 'fast_forward' }, at(5, 9 * 60));
+    expect(r.ok && r.skipped).toBe(7 * 60);
+    const after = ok(r);
+    expect(after.timeOffset).toBe(7 * 60);
+    expect(after.busyWith).toBe(null);
+    // At the new personal time (16:00) the player is free again.
+    expect(applyAction(after, { type: 'fast_forward' }, at(5, 16 * 60)).ok).toBe(false);
+    expect(applyAction(after, { type: 'eat', item: 'gala' }, at(5, 16 * 60)).ok).toBe(false); // free, just no gala
+    expect(applyAction({ ...after, inventory: { gala: 1 } }, { type: 'eat', item: 'gala' }, at(5, 16 * 60)).ok).toBe(true);
   });
 
   it('does not mutate the previous state', () => {

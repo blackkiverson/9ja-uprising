@@ -48,5 +48,8 @@ export const HIT_MIN_SPEED = 1.5;
 /** Health hits zero: you wake up at home, patched up, with a bill. */
 export const KNOCKOUT = { health: 50, bill: 2500, minutes: 120 };
 
+/** Sleep: allowed in the evening or when exhausted, and you wake at this minute of the day. */
+export const SLEEP = { from: 19 * 60, until: 5 * 60, tiredBelow: 40, wakeAt: 6 * 60 + 30 };
+
 export const STARTING_MONEY = 10000;
 export const MAX_ENERGY = 100;

@@ -1,4 +1,4 @@
-import { DANFO, FOOD, NPCS, OFFICE_SHIFT, WEAPONS, formatClock, type Action, type FoodId, type NpcId } from '@9ja/shared';
+import { DANFO, FOOD, NPCS, OFFICE_SHIFT, WEAPONS, formatClock, type Action, type ActionResult, type FoodId, type NpcId } from '@9ja/shared';
 import type { Game } from './game';
 import type { Place } from './scene/world';
 
@@ -13,6 +13,8 @@ export class Hud {
     private game: Game,
     private onDanfo: () => void,
     private onTalk: (npc: NpcId) => void,
+    /** Time was skipped (fast-forward, sleep): play the time-lapse over these minutes. */
+    private onSkip: (minutes: number) => void,
   ) {}
 
   toast(text: string): void {
@@ -24,7 +26,8 @@ export class Hud {
   }
 
   /** Called every frame; only rebuilds the action buttons when something relevant changed. */
-  update(near: Place | null, npc: NpcId | null = null): void {
+  /** clockMinute: the time to show (races during a time-lapse). */
+  update(near: Place | null, npc: NpcId | null = null, clockMinute?: number): void {
     const s = this.game.state;
     const now = this.game.now();
     const busy = now.totalMinutes < s.busyUntil;
@@ -33,7 +36,13 @@ export class Hud {
     const money = $('money');
     if (!money.firstChild) money.innerHTML = '<span class="naira">₦</span><span class="digits"></span>';
     (money.lastChild as HTMLElement).textContent = String(Math.max(0, Math.floor(s.money))).padStart(8, '0');
-    $('clock').textContent = formatClock(now.minuteOfDay);
+    const shown = clockMinute === undefined ? now.minuteOfDay : ((Math.floor(clockMinute) % 1440) + 1440) % 1440;
+    const text = formatClock(shown);
+    const clockEl = $('clock');
+    if (clockEl.dataset.t !== text) {
+      clockEl.dataset.t = text;
+      clockEl.innerHTML = [...text].map((ch) => (ch === ':' ? '<span class="colon">:</span>' : `<span>${ch}</span>`)).join('');
+    }
     $('day').textContent = `DAY ${s.personalDay}`;
     $('energy-fill').style.width = `${s.energy}%`;
     $('health-fill').style.width = `${s.health}%`;
@@ -50,9 +59,8 @@ export class Hud {
 
     const actions = $('actions');
     actions.replaceChildren();
-    if (busy) return;
 
-    const add = (label: string, action: Action, after?: () => void) => {
+    const add = (label: string, action: Action, after?: (r: Extract<ActionResult, { ok: true }>) => void) => {
       const btn = document.createElement('button');
       btn.textContent = label;
       btn.addEventListener('click', () => {
@@ -60,11 +68,18 @@ export class Hud {
         if (!r.ok) this.toast(r.reason);
         else {
           if (r.message) this.toast(r.message);
-          after?.();
+          if (r.skipped) this.onSkip(r.skipped);
+          after?.(r);
         }
       });
       actions.append(btn);
     };
+
+    if (busy) {
+      const label = { work: 'Fast forward to end of shift', travel: 'Skip the ride', recovering: 'Skip recovery' }[s.busyWith ?? 'work'];
+      add(`⏩ ${label}`, { type: 'fast_forward' });
+      return;
+    }
 
     if (npc) {
       const btn = document.createElement('button');
