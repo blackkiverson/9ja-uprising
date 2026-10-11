@@ -261,10 +261,17 @@ export class Music {
     return this.settings.muted;
   }
 
-  /** Browsers only allow audio after a user gesture: call from a click or key press. */
+  /** The playing file, if any, so a blocked autoplay can be retried on the first gesture. */
+  private element: HTMLAudioElement | null = null;
+
+  /**
+   * Starts the soundtrack. Called on page load (works where the browser allows autoplay, e.g.
+   * sites you play media on often) and again on every tap or key press until sound is running.
+   */
   start(): void {
     if (this.ctx) {
-      void this.ctx.resume();
+      if (this.ctx.state !== 'running') void this.ctx.resume();
+      if (this.element?.paused && !this.element.ended) void this.element.play().catch(() => {});
       return;
     }
     this.ctx = new AudioContext();
@@ -327,7 +334,9 @@ export class Music {
         synth.start();
         stop = () => synth.stop();
       });
-      void el.play();
+      this.element = el;
+      // Rejected if the browser blocks autoplay; start() retries on the first gesture.
+      void el.play().catch(() => {});
       stop = () => el.pause();
     } else {
       const synth = new Synth(ctx, gain, track.groove);

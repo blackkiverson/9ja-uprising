@@ -98,6 +98,8 @@ music.onTrack = (title) => {
   nowTimer = window.setTimeout(() => nowPlaying.classList.remove('show'), 4000);
 };
 soundBtn.classList.toggle('muted', music.muted);
+// Try straight away; if the browser blocks autoplay, the first tap or key press starts it.
+music.start();
 const startMusic = () => music.start();
 window.addEventListener('pointerdown', startMusic);
 window.addEventListener('keydown', startMusic);
