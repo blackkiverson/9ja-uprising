@@ -1,76 +1,48 @@
 import * as THREE from 'three';
 import { NPCS, type NpcId } from '@9ja/shared';
 import type { Frame } from './sphere';
-import { toonMesh } from './toon';
-
-type Hat = 'headtie' | 'fila' | 'cap' | 'kufi' | 'afro';
-interface Look {
-  outfit: number;
-  skin: number;
-  hat: Hat;
-  hatColor: number;
-  /** Long wrapper or kaftan instead of shirt and trousers. */
-  long?: boolean;
-}
+import { Character, OUTFITS, type Body, type Outfit } from './character';
 
 // Fictional characters; outfits nod to everyday Lagos dress.
-const LOOKS: Record<NpcId, Look> = {
-  mama_nkechi: { outfit: 0xc9584d, skin: 0x5a3a24, hat: 'headtie', hatColor: 0xd9b44a, long: true },
-  oga_bayo: { outfit: 0xe9ecdf, skin: 0x6b4226, hat: 'fila', hatColor: 0x5b8fb0 },
-  tunde: { outfit: 0xe3b843, skin: 0x4a2f1f, hat: 'cap', hatColor: 0x283130 },
-  mallam_sani: { outfit: 0xeef0e6, skin: 0x6b4a33, hat: 'kufi', hatColor: 0xd8d3c4, long: true },
-  kelz: { outfit: 0x8e5bb5, skin: 0x5a3a24, hat: 'cap', hatColor: 0xc9584d },
+const LOOKS: Record<NpcId, { body: Body; outfit: Outfit }> = {
+  mama_nkechi: {
+    body: { skin: 0x5a3a24, hair: 'puff', hairColor: 0x1b1410, build: 1.1 },
+    outfit: {
+      top: { style: 'buba', color: 0xc9584d, accent: 0xd9b44a },
+      bottom: { style: 'wrapper', color: 0xc9584d, accent: 0xd9b44a },
+      shoes: { style: 'slippers', color: 0x7a4a2a },
+      hat: { style: 'headtie', color: 0xd9b44a, accent: 0xc9584d },
+    },
+  },
+  oga_bayo: {
+    body: { skin: 0x6b4226, hair: 'low', hairColor: 0x2a2420, build: 1.15 },
+    outfit: { ...OUTFITS.owambe, top: { style: 'buba', color: 0xe9ecdf, accent: 0x5b8fb0 }, bottom: { style: 'trousers', color: 0xe9ecdf }, hat: { style: 'fila', color: 0x5b8fb0 } },
+  },
+  tunde: {
+    body: { skin: 0x4a2f1f, hair: 'low', hairColor: 0x1b1410, build: 0.95 },
+    outfit: { top: { style: 'tee', color: 0xe3b843 }, bottom: { style: 'shorts', color: 0x34465e }, shoes: { style: 'sneakers', color: 0xe9ecdf, accent: 0x283130 }, hat: { style: 'cap', color: 0x283130 } },
+  },
+  mallam_sani: {
+    body: { skin: 0x6b4a33, hair: 'bald', hairColor: 0x2a2420 },
+    outfit: OUTFITS.jalabiya,
+  },
+  kelz: {
+    body: { skin: 0x5a3a24, hair: 'braids', hairColor: 0x1b1410, build: 0.92 },
+    outfit: { top: { style: 'singlet', color: 0x8e5bb5 }, bottom: { style: 'trousers', color: 0x283130 }, shoes: { style: 'sneakers', color: 0xf4f1e6, accent: 0x8e5bb5 }, hat: { style: 'cap', color: 0xc9584d } },
+  },
 };
 
-function figure(look: Look): THREE.Group {
+function figure(look: { body: Body; outfit: Outfit }): { group: THREE.Group; character: Character } {
   const g = new THREE.Group();
-  const body = look.long
-    ? toonMesh(new THREE.CylinderGeometry(0.38, 0.6, 1.6, 10), look.outfit)
-    : toonMesh(new THREE.CapsuleGeometry(0.43, 0.95, 4, 8), look.outfit);
-  body.position.y = look.long ? 0.8 : 0.93;
-  const head = toonMesh(new THREE.SphereGeometry(0.37, 12, 10), look.skin);
-  head.position.y = 1.92;
-  g.add(body, head);
-  let hat: THREE.Mesh;
-  switch (look.hat) {
-    case 'headtie': {
-      hat = toonMesh(new THREE.SphereGeometry(0.46, 12, 8), look.hatColor);
-      hat.scale.set(1.15, 0.75, 1.1);
-      hat.position.y = 2.18;
-      const knot = toonMesh(new THREE.SphereGeometry(0.2, 8, 6), look.hatColor);
-      knot.position.set(0, 2.38, -0.22);
-      g.add(knot);
-      break;
-    }
-    case 'fila':
-      hat = toonMesh(new THREE.CylinderGeometry(0.34, 0.38, 0.32, 12), look.hatColor);
-      hat.position.y = 2.24;
-      hat.rotation.z = 0.25;
-      break;
-    case 'kufi':
-      hat = toonMesh(new THREE.CylinderGeometry(0.36, 0.38, 0.22, 12), look.hatColor);
-      hat.position.y = 2.2;
-      break;
-    case 'cap': {
-      hat = toonMesh(new THREE.SphereGeometry(0.4, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), look.hatColor);
-      hat.position.y = 2.02;
-      const brim = toonMesh(new THREE.BoxGeometry(0.42, 0.05, 0.36), look.hatColor);
-      brim.position.set(0, 2.04, 0.42);
-      g.add(brim);
-      break;
-    }
-    default:
-      hat = toonMesh(new THREE.SphereGeometry(0.42, 12, 10, 0, Math.PI * 2, 0, Math.PI / 2), look.hatColor);
-      hat.position.y = 1.98;
-  }
-  g.add(hat);
+  const character = new Character(look.body, look.outfit);
+  g.add(character.root);
   const shadow = new THREE.Mesh(
     new THREE.CircleGeometry(0.6, 16).rotateX(-Math.PI / 2),
     new THREE.MeshBasicMaterial({ color: 0x1f3a3a, transparent: true, opacity: 0.22, depthWrite: false }),
   );
   shadow.position.y = 0.05;
   g.add(shadow);
-  return g;
+  return { group: g, character };
 }
 
 interface NpcView {
@@ -78,6 +50,7 @@ interface NpcView {
   frame: Frame;
   root: THREE.Group;
   body: THREE.Group;
+  character: Character;
   tag: HTMLElement;
   facing: THREE.Vector3;
   phase: number;
@@ -99,14 +72,14 @@ export class Npcs {
       const frame = spots[id];
       const root = new THREE.Group();
       root.matrixAutoUpdate = false;
-      const body = figure(LOOKS[id]);
+      const { group: body, character } = figure(LOOKS[id]);
       root.add(body);
       scene.add(root);
       const tag = document.createElement('div');
       tag.className = 'npc-tag';
       tag.textContent = NPCS[id].name;
       tagLayer.append(tag);
-      this.views.push({ id, frame, root, body, tag, facing: frame.s.clone(), phase: (phase += 1.7) });
+      this.views.push({ id, frame, root, body, character, tag, facing: frame.s.clone(), phase: (phase += 1.7) });
     }
   }
 
@@ -115,6 +88,11 @@ export class Npcs {
   }
 
   /** Closest NPC within talking range of the player, if any. */
+  /** Where the NPCs near a point stand, for the camera to visit. */
+  subjects(near: THREE.Vector3, r: number): THREE.Vector3[] {
+    return this.views.filter((v) => v.frame.c.distanceTo(near) < r).map((v) => v.frame.c);
+  }
+
   nearest(player: THREE.Vector3): NpcId | null {
     let best: NpcId | null = null;
     let bestD = TALK_RADIUS;
@@ -139,7 +117,7 @@ export class Npcs {
       v.facing.addScaledVector(up, -v.facing.dot(up)).normalize();
       _x.crossVectors(up, v.facing);
       v.root.matrix.copy(_m.makeBasis(_x, up, v.facing).setPosition(v.frame.c));
-      v.body.position.y = Math.abs(Math.sin(t * 2 + v.phase)) * 0.04; // idle bounce
+      v.character.animate(dt, 0);
 
       // Name tag above the head, only when near and on the visible side of the planet.
       const head = v.frame.toWorld(0, 2.9, 0);

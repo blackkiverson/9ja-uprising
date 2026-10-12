@@ -30,6 +30,20 @@ const KEYS: Key[] = [
   { at: 1260, sky: 0x1c2a44, hemiSky: 0x7088bd, hemiGround: 0x1f2c3c, hemi: 0.6, sun: 0xa9bce8, sunI: 0.35, rock: 0x34507e, speck: 0xd4e2ff, haze: 0x2c3f66, lamps: 1 },
 ];
 
+/**
+ * How much the sky changes around a minute of the day: 1 through dawn and dusk, low through the
+ * flat stretches of full day and full night. A time-lapse spends its seconds by this, so a sleep
+ * doesn't race the whole sunrise past in its last moment.
+ */
+export function skyChange(minute: number): number {
+  const m = ((minute % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+  let i = KEYS.length - 1;
+  while (KEYS[i]!.at > m) i--;
+  const a = KEYS[i]!;
+  const b = KEYS[(i + 1) % KEYS.length]!;
+  return a.sky === b.sky && a.lamps === b.lamps ? 0.15 : 1;
+}
+
 const _a = new THREE.Color();
 const _b = new THREE.Color();
 const mix = (out: THREE.Color, a: number, b: number, t: number) => out.copy(_a.setHex(a)).lerp(_b.setHex(b), t);

@@ -69,7 +69,7 @@ export function applyAction(prev: PlayerState, action: Action, now: WorldTime): 
       s.flags.oga_advance = false;
       s.money += OFFICE_SHIFT.pay - advance;
       const repaid = advance ? ` (₦${advance.toLocaleString()} advance repaid)` : '';
-      return { ok: true, state: s, message: `Shift done. +₦${(OFFICE_SHIFT.pay - advance).toLocaleString()}${repaid}` };
+      return { ok: true, state: s, message: `Shift started. ₦${(OFFICE_SHIFT.pay - advance).toLocaleString()} comes in as you work${repaid}.` };
     }
 
     case 'buy_food': {

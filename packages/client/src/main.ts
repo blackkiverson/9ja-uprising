@@ -1,6 +1,6 @@
 import '@fontsource/bungee';
 import * as THREE from 'three';
-import { AGBERO, AGBERO_LINES, CLINIC, DANFO_ROUTES, KNOCKOUT, agberosSettled, formatClock } from '@9ja/shared';
+import { AGBERO, AGBERO_LINES, CLINIC, DANFO_ROUTES, KNOCKOUT, OFFICE_SHIFT, agberosSettled, formatClock } from '@9ja/shared';
 import { Bubbles } from './bubbles';
 import { Tips, type TipId } from './tips';
 import { Game } from './game';
@@ -10,9 +10,9 @@ import { Hud } from './hud';
 import { Keyboard } from './input';
 import { CameraRig, Intro, LapseCam, createCamera, fadeOccluders } from './scene/camera';
 import { Birds } from './scene/birds';
+import { Pigeons } from './scene/pigeons';
 import { Clouds } from './scene/clouds';
-import { Collisions } from './scene/collision';
-import { Daylight } from './scene/daylight';
+import { Daylight, skyChange } from './scene/daylight';
 import { DanfoRide } from './scene/ride';
 import { windowNight } from './scene/nightlights';
 import { Npcs } from './scene/npcs';
@@ -20,6 +20,7 @@ import { Smoke } from './scene/smoke';
 import { Space } from './scene/space';
 import { Rng } from './scene/rng';
 import { PlayerAvatar } from './scene/player';
+import { OUTFITS, type OutfitId } from './scene/character';
 import { MoveMarker } from './scene/markers';
 import { findPath } from './scene/pathfind';
 import { chartOf, raySphere } from './scene/sphere';
@@ -132,6 +133,7 @@ window.addEventListener('keydown', (e) => {
 const clouds = new Clouds(scene, new Rng(7));
 const space = new Space(scene, new Rng(11));
 const birds = new Birds(scene, new Rng(23));
+const pigeons = new Pigeons(scene, new Rng(57), world.occluders, [world.interiors.office.mesh, world.interiors.clinic.mesh]);
 // Go-slow corridors: the main road through the hub and city, and every third city street.
 const busy = (e: (typeof world.roads.edges)[number]) => {
   const lambda = chartOf(e.pts[Math.floor(e.pts.length / 2)]!).lambda;
@@ -181,6 +183,11 @@ window.addEventListener('keydown', (e) => {
     history.replaceState(null, '', `${location.pathname}${params.size ? `?${params}` : ''}${location.hash}`);
   }
 }
+// ?outfit=street previews one of the starter outfits (until outfits are owned and saved).
+{
+  const id = new URLSearchParams(location.search).get('outfit');
+  if (id && id in OUTFITS) player.setOutfit(OUTFITS[id as OutfitId]);
+}
 if (new URLSearchParams(location.search).has('skipIntro')) {
   intro.skip();
   introEl.classList.add('leaving');
@@ -207,7 +214,7 @@ function nearestPlace(): Place | null {
 }
 
 // Dev-only hook for automated checks and console debugging.
-if (import.meta.env.DEV) Object.assign(window, { __9ja: { game, player, places, scene, renderer, camera, world, rig, THREE, teleportTo, intro, npcs, dialogue, traffic, findPath, music, smoke } });
+if (import.meta.env.DEV) Object.assign(window, { __9ja: { game, player, places, scene, renderer, camera, world, rig, THREE, teleportTo, intro, npcs, dialogue, traffic, findPath, music, smoke, pigeons } });
 
 const daylight = new Daylight(scene, world.hemi, world.sun);
 
@@ -237,12 +244,18 @@ function endRide(): void {
 
 // --- Time-lapse: skipping time (fast-forward, sleep) races the sky through the hours skipped. ---
 // Timed on the real clock, not the frame delta (which is capped), so a slow frame can't drag it out.
-let lapse: { from: number; to: number; t: number; dur: number; start: number } | null = null;
+let lapse: { from: number; to: number; t: number; dur: number; start: number; table: number[] } | null = null;
 const lapseCam = new LapseCam();
 function startLapse(minutes: number): void {
   const to = game.exactNow();
   // Long enough to pull out, spin the planet and dive back in.
-  lapse = { from: to - minutes, to, t: 0, dur: THREE.MathUtils.clamp(3.6 + minutes / 160, 4.5, 7.5), start: performance.now() };
+  const from = to - minutes;
+  // table[i]: share of the lapse used up by minute from + i, weighted by how much the sky changes.
+  const table = [0];
+  for (let i = 0; i < Math.ceil(minutes); i++) table.push(table[i]! + skyChange(from + i + 0.5));
+  const total = table.at(-1) || 1;
+  for (let i = 0; i < table.length; i++) table[i]! /= total;
+  lapse = { from, to, t: 0, dur: THREE.MathUtils.clamp(3.6 + minutes / 160, 4.5, 7.5), start: performance.now(), table };
   player.followPath([]);
   lapseCam.start(camera, rig);
 }
@@ -251,40 +264,72 @@ const lapseRush = () => (lapse ? Math.sin(Math.PI * Math.min(1, lapse.t / lapse.
 const shownMinute = () => {
   if (!lapse) return game.exactNow();
   const t = Math.min(1, lapse.t / lapse.dur);
-  return THREE.MathUtils.lerp(lapse.from, lapse.to, t * t * (3 - 2 * t));
+  const s = t * t * (3 - 2 * t);
+  // Invert the table: which minute has that share of the sky's change behind it.
+  const { table } = lapse;
+  let lo = 0;
+  let hi = table.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (table[mid]! <= s) lo = mid;
+    else hi = mid;
+  }
+  const f = (s - table[lo]!) / (table[hi]! - table[lo]! || 1);
+  return Math.min(lapse.to, lapse.from + lo + f);
 };
 
-// --- At work: the office goes see-through and the player walks about inside until the shift ends. ---
-const office = world.interiors.office;
-const noWalls = new Collisions();
-let inOffice = false;
-let deskPause = 0;
-const atWork = () => game.state.busyWith === 'work' && game.state.location === 'office' && isBusy();
-
-// --- Recovering at the clinic: you're inside (hidden), the building glows in and out, and a
-// pie over it fills until you're discharged. ---
-const clinic = world.interiors.clinic;
-const clinicMat = clinic.mesh.material as THREE.MeshToonMaterial;
-const pieEl = document.getElementById('clinic-pie')!;
+// --- Inside a building (a shift at the office, recovering at the clinic): you're hidden, the
+// building glows in and out, and a pie over it fills until you come out. ---
+type StayKind = 'office' | 'clinic';
+const pieEl = document.getElementById('stay-pie')!;
 const pieFill = pieEl.querySelector('.pie') as HTMLElement;
 const pieLabel = pieEl.querySelector('span')!;
-let clinicStay: { from: number; until: number } | null = null;
-const recovering = () => (game.state.busyWith === 'recovering' || game.state.busyWith === 'treatment') && game.state.location === 'clinic' && isBusy();
-function updateClinic(playing: boolean, minute: number, t: number): void {
-  if (playing && recovering()) {
-    const minutes = game.state.busyWith === 'recovering' ? KNOCKOUT.minutes : CLINIC.full.minutes;
-    clinicStay ??= { from: game.state.busyUntil - minutes, until: game.state.busyUntil };
-  } else if (clinicStay && !lapse) clinicStay = null; // hold through a skip's time-lapse, then out
-  const k = clinicStay ? 0.5 + 0.5 * Math.sin(t * 3) : 0;
-  clinicMat.emissive.setRGB(0.5 * k, 0.42 * k, 0.36 * k);
-  if (!clinicStay || !playing) {
+let stay: { kind: StayKind; from: number; until: number; pay: number } | null = null;
+/** The rules pay a shift up front; the HUD holds back what isn't earned yet so it counts up. */
+let unpaid = 0;
+let lastMoney: number | null = null;
+function stayingAt(): { kind: StayKind; minutes: number } | null {
+  if (!isBusy()) return null;
+  const { busyWith, location } = game.state;
+  if (busyWith === 'work' && location === 'office') return { kind: 'office', minutes: OFFICE_SHIFT.durationMinutes };
+  if (busyWith === 'recovering' && location === 'clinic') return { kind: 'clinic', minutes: KNOCKOUT.minutes };
+  if (busyWith === 'treatment' && location === 'clinic') return { kind: 'clinic', minutes: CLINIC.full.minutes };
+  return null;
+}
+function updateStay(playing: boolean, minute: number, t: number): void {
+  const now = playing ? stayingAt() : null;
+  if (now) {
+    // The shift's pay landed with the click; on a reload mid-shift, assume the full wage.
+    const pay = now.kind === 'office' ? (lastMoney === null ? OFFICE_SHIFT.pay : Math.max(0, game.state.money - lastMoney)) : 0;
+    stay ??= { kind: now.kind, from: game.state.busyUntil - now.minutes, until: game.state.busyUntil, pay };
+  } else if (stay && !lapse) {
+    // Hold through a skip's time-lapse, then out of the door.
+    if (stay.kind === 'office') teleportTo(placeById('office').door);
+    stay = null;
+  }
+  if (playing) lastMoney = game.state.money;
+  const k = 0.5 + 0.5 * Math.sin(t * 3);
+  for (const kind of ['office', 'clinic'] as const) {
+    const g = stay?.kind === kind ? k : 0;
+    (world.interiors[kind].mesh.material as THREE.MeshToonMaterial).emissive.setRGB(0.5 * g, 0.42 * g, 0.36 * g);
+  }
+  const p = stay ? THREE.MathUtils.clamp((minute - stay.from) / (stay.until - stay.from), 0, 1) : 1;
+  unpaid = stay ? stay.pay * (1 - p) : 0;
+  if (!stay || !playing) {
     pieEl.hidden = true;
     return;
   }
-  const p = THREE.MathUtils.clamp((minute - clinicStay.from) / (clinicStay.until - clinicStay.from), 0, 1);
   pieFill.style.setProperty('--p', p.toFixed(3));
-  pieLabel.textContent = p >= 1 ? 'Ready!' : `Ready at ${formatClock(((clinicStay.until % 1440) + 1440) % 1440)}`;
-  const top = clinic.frame.toWorld(0, 7.2, 0); // just above the roof
+  const at = formatClock(((stay.until % 1440) + 1440) % 1440);
+  pieLabel.textContent = stay.kind === 'office' ? (p >= 1 ? 'Shift done!' : `Shift ends ${at}`) : p >= 1 ? 'Ready!' : `Ready at ${at}`;
+  if (tour.subject) {
+    // Touring: keep the pie in view, top centre.
+    pieEl.hidden = false;
+    pieEl.style.transform = `translate(-50%, 0) translate(${innerWidth / 2}px, 70px)`;
+    return;
+  }
+  const { frame, mesh } = world.interiors[stay.kind];
+  const top = frame.toWorld(0, (mesh.userData.bounds as THREE.Box3).max.y + 1, 0); // just above the roof
   const up = top.clone().normalize();
   if (top.clone().sub(camera.position).dot(up) > 0) {
     pieEl.hidden = true;
@@ -333,6 +378,52 @@ function hurt(knockedOut: boolean): void {
 // settling them. Settling (₦500) buys peace till morning. Running works: they're slower. ---
 const bubbles = new Bubbles(document.getElementById('bubbles')!);
 const tips = new Tips(document.getElementById('tip')!);
+// --- Waiting inside: left alone, the camera wanders off to watch the town (people, pigeons,
+// traffic, agberos after dark); any tap or key snaps it back to the building. ---
+const TOUR_AFTER = 4;
+const TOUR_HOLD = 9;
+/** Seconds to glide from one thing to the next: an unhurried, eased pan. */
+const TOUR_GLIDE = 4;
+const _tourAt = new THREE.Vector3();
+const tour = { idle: 0, hold: 0, subject: null as THREE.Vector3 | null, back: false, from: new THREE.Vector3(), t: 0 };
+const wake = () => {
+  tour.idle = 0;
+  if (tour.subject) tour.back = true;
+  tour.subject = null;
+};
+window.addEventListener('pointerdown', wake, true);
+window.addEventListener('keydown', wake, true);
+if (import.meta.env.DEV) Object.assign((window as unknown as { __9ja: object }).__9ja, { tour });
+const pickOne = <T,>(list: T[]): T | undefined => list[Math.floor(Math.random() * list.length)];
+/** What the camera should watch instead of the building, if anything. */
+function updateTour(dt: number): THREE.Vector3 | null {
+  if (!stay || lapse) {
+    tour.idle = 0;
+    tour.subject = null;
+    return null;
+  }
+  tour.idle += dt;
+  if (tour.idle < TOUR_AFTER) return null;
+  tour.hold -= dt;
+  if (!tour.subject || tour.hold <= 0) {
+    const at = world.interiors[stay.kind].frame.c;
+    // Somewhere else: not the building you're in (or its own pigeons).
+    const away = (l: THREE.Vector3[]) => l.filter((p) => p.distanceTo(at) > 10);
+    const kinds = [npcs.subjects(at, 45), pigeons.subjects(at, 45), traffic.subjects(at, 45, daylight.lamps)].map(away).filter((l) => l.length);
+    const list = pickOne(kinds);
+    if (list) tour.subject = pickOne(list.filter((p) => p !== tour.subject)) ?? list[0]!;
+    tour.hold = TOUR_HOLD;
+    tour.from.copy(rig.focus);
+    tour.t = 0;
+  }
+  if (!tour.subject) return null;
+  // Ease out from where the camera is to the subject (which may be moving), then ride along.
+  tour.t += dt;
+  const k = Math.min(1, tour.t / TOUR_GLIDE);
+  const e = k * k * k * (k * (k * 6 - 15) + 10);
+  return _tourAt.lerpVectors(tour.from, tour.subject, e).setLength(tour.subject.length());
+}
+
 const PLACE_TIPS: Partial<Record<Place['id'], TipId>> = { bus_stop: 'danfo', market: 'danfo', office: 'work', food_stall: 'food', home: 'sleep', clinic: 'clinic' };
 const pick = <T,>(list: readonly T[]) => list[Math.floor(Math.random() * list.length)]!;
 let gripTime = 0;
@@ -402,23 +493,7 @@ renderer.setAnimationLoop(() => {
   // WASD is relative to the screen: W walks "up" the screen along the planet.
   const input = busy ? new THREE.Vector2() : keyboard.direction();
   walk.set(0, 0, 0).addScaledVector(rig.right, input.x).addScaledVector(rig.forward, -input.y);
-  // Keep strolling round the office through the time-lapse; walk out of the door once it ends.
-  const working = playing && (atWork() || (inOffice && lapse !== null));
-  if (working) {
-    inOffice = true;
-    deskPause -= dt;
-    if (player.idle && deskPause <= 0) {
-      const lx = (Math.random() - 0.5) * (office.w - 2.4);
-      const lz = (Math.random() - 0.5) * (office.d - 2.4);
-      player.moveTo(office.frame.toWorld(lx, 0, lz));
-      deskPause = 1 + Math.random() * 2.5;
-    }
-  } else if (inOffice) {
-    inOffice = false;
-    player.followPath([]);
-    teleportTo(placeById('office').door);
-  }
-  player.update(dt, walk, inOffice ? noWalls : world.collisions, world.heightAt);
+  player.update(dt, walk, world.collisions, world.heightAt);
   // On the danfo: the player rides inside it. Skipping the ride (no longer busy) ends it at once;
   // arriving early catches the clock up to the fare's ride time.
   if (rideTo) {
@@ -430,7 +505,7 @@ renderer.setAnimationLoop(() => {
     } else player.teleport(ride.position);
   }
   hitCooldown = Math.max(0, hitCooldown - dt);
-  const struck = rideTo || clinicStay ? null : player.push((p) => {
+  const struck = rideTo || stay ? null : player.push((p) => {
     const hit = traffic.pushOut(p);
     // Thrown clear, but never into a wall.
     if (hit) world.collisions.resolve(p);
@@ -444,13 +519,20 @@ renderer.setAnimationLoop(() => {
   const ground = player.ground;
   if (playing && cinematic && lapse) lapseCam.update(lapse.t, lapse.dur, camera, rig, ground);
   else if (playing) {
-    rig.update(ground, dt);
-    fadeOccluders(camera, ground, world.occluders, dt, inOffice ? office.mesh : null);
+    // Inside a building the camera watches the building (or wanders, if left alone), and nothing
+    // fades: it's what you look at.
+    const watching = updateTour(dt);
+    const home = stay ? world.interiors[stay.kind].frame.c : ground;
+    // The tour steers the camera itself (smooth glides); a tap snaps it home.
+    rig.update(watching ?? home, dt, tour.back || watching !== null);
+    tour.back = false;
+    fadeOccluders(camera, stay ? null : ground, world.occluders, dt);
   } else intro.update(dt, camera, rig);
   // In a time-lapse the whole world races: clouds stream, traffic and crowds rush about.
   const rush = lapseRush();
   // Out at the planet (title or time-lapse) there's no single focus: the whole visible face lives.
-  const focus = playing && !cinematic ? ground : null;
+  // While the camera tours, the town comes alive where it's looking, not round the hidden player.
+  const focus = playing && !cinematic ? (tour.subject ? rig.focus : ground) : null;
   clouds.update(dt * (1 + rush * 30), camera, focus);
   const nearNpc = playing ? npcs.nearest(ground) : null;
   // Walking away ends the conversation.
@@ -464,17 +546,18 @@ renderer.setAnimationLoop(() => {
   bubbles.update(camera);
   smoke.update(dt * (1 + rush * 2), camera, focus, traffic.exhausts());
   moveMarker.update(dt);
-  player.setMarkerVisible(playing && !rideTo && !clinicStay);
-  // Out of sight while on a danfo or inside the clinic.
-  player.root.visible = !rideTo && !clinicStay;
+  player.setMarkerVisible(playing && !rideTo && !stay);
+  // Out of sight while on a danfo or inside a building.
+  player.root.visible = !rideTo && !stay;
   player.faceMarker(camera);
   birds.update(dt * (1 + rush * 3));
+  pigeons.update(dt * (1 + rush * 3), playing && !cinematic && !stay ? ground : null, daylight.lamps);
 
   // Lights ride with whatever we're looking at: the player in play, the planet's visible face on the title.
   const anchor = focus ?? camera.position.clone().setLength(ground.length());
   const minute = shownMinute();
   daylight.update(minute, anchor, rig.right, rig.forward);
-  updateClinic(playing, minute, clock.elapsedTime);
+  updateStay(playing, minute, clock.elapsedTime);
   space.setTones(daylight.rock, daylight.speck, daylight.haze);
   world.lights.update(clock.elapsedTime, daylight.lamps);
   windowNight.value = daylight.lamps;
@@ -489,6 +572,6 @@ renderer.setAnimationLoop(() => {
     if (nearNpc) tips.trigger('talk');
     if (daylight.lamps > 0.6) tips.trigger('night');
   }
-  if (playing) hud.update(near, nearNpc, minute, harassed ? { settle: AGBERO.settle, onSettle: settleAgberos } : null);
+  if (playing) hud.update(near, nearNpc, minute, harassed ? { settle: AGBERO.settle, onSettle: settleAgberos } : null, unpaid);
   renderer.render(scene, camera);
 });

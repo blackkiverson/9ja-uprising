@@ -42,8 +42,8 @@ export class Hud {
 
   /** Called every frame; only rebuilds the action buttons when something relevant changed. */
   /** clockMinute: the time to show (races during a time-lapse). */
-  /** threat: agberos are on you; offers a button to settle them. */
-  update(near: Place | null, npc: NpcId | null = null, clockMinute?: number, threat: { settle: number; onSettle: () => void } | null = null): void {
+  /** threat: agberos are on you; offers a button to settle them. unpaid: wages held back from the display. */
+  update(near: Place | null, npc: NpcId | null = null, clockMinute?: number, threat: { settle: number; onSettle: () => void } | null = null, unpaid = 0): void {
     const s = this.game.state;
     const now = this.game.now();
     const busy = now.totalMinutes < s.busyUntil;
@@ -51,7 +51,7 @@ export class Hud {
     // Bungee has no naira sign, so it is drawn in a font that does.
     const money = $('money');
     if (!money.firstChild) money.innerHTML = '<span class="naira">₦</span><span class="digits"></span>';
-    (money.lastChild as HTMLElement).textContent = String(Math.max(0, Math.floor(s.money))).padStart(8, '0');
+    (money.lastChild as HTMLElement).textContent = String(Math.max(0, Math.floor(s.money - unpaid))).padStart(8, '0');
     const shown = clockMinute === undefined ? now.minuteOfDay : ((Math.floor(clockMinute) % 1440) + 1440) % 1440;
     const text = formatClock(shown);
     const clockEl = $('clock');

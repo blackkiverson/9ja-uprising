@@ -150,8 +150,6 @@ export class Intro {
 
 // --- Fading buildings that hide the player ---
 const _a = new THREE.Vector3();
-const _b = new THREE.Vector3();
-const _box = new THREE.Box3();
 
 /** Segment vs axis-aligned box (slab test). */
 function segmentHitsBox(a: THREE.Vector3, b: THREE.Vector3, box: THREE.Box3): boolean {
@@ -173,32 +171,54 @@ function segmentHitsBox(a: THREE.Vector3, b: THREE.Vector3, box: THREE.Box3): bo
   return true;
 }
 
+/** Points on the player's silhouette: feet, head, and both sides at chest height. */
+const SILHOUETTE = [[0, 0.15], [0, 1.95], [-0.4, 1.1], [0.4, 1.1], [0, 1.1]] as const;
+const _t = new THREE.Vector3();
+const _side = new THREE.Vector3();
+
 /**
- * Fades any building that sits between the camera and the player's feet or head.
- * Tested in each building's own flat frame, which is exact for a bent box.
+ * Fades a building only when it hides the whole player: every silhouette point must be behind it.
+ * A building that clips an edge of you, or hides nearby street, stays solid. Tested in each
+ * building's own flat frame, which is exact for a bent box.
  */
-export function fadeOccluders(camera: THREE.Camera, target: THREE.Vector3, occluders: THREE.Mesh[], dt: number, inside: THREE.Mesh | null = null): void {
+export function fadeOccluders(camera: THREE.Camera, target: THREE.Vector3 | null, occluders: THREE.Mesh[], dt: number): void {
   const k = 1 - Math.exp(-14 * dt);
+  // No target (player hidden indoors): everything goes back to solid.
+  if (!target) {
+    for (const obj of occluders) fadeTo(obj, 1, k);
+    return;
+  }
   const up = target.clone().normalize();
-  const feet = target.clone().addScaledVector(up, 0.3);
-  const head = target.clone().addScaledVector(up, 1.9);
+  // Screen-sideways, flattened onto the ground at the player.
+  _side.setFromMatrixColumn(camera.matrixWorld, 0);
+  _side.addScaledVector(up, -_side.dot(up)).normalize();
+  const points = SILHOUETTE.map(([x, y]) => target.clone().addScaledVector(_side, x).addScaledVector(up, y));
   for (const obj of occluders) {
     const { frame, bounds } = obj.userData as { frame: import('./sphere').Frame; bounds: THREE.Box3 };
-    let hit = obj === inside;
-    if (!hit && frame.c.distanceToSquared(target) < 30 * 30) {
-      _box.copy(bounds).expandByVector(new THREE.Vector3(0.8, 0, 0.8));
+    let hit = false;
+    if (frame.c.distanceToSquared(target) < 36 * 36) {
       frame.toLocal(camera.position, _a);
-      hit = segmentHitsBox(_a, frame.toLocal(head, _b), _box) || segmentHitsBox(_a, frame.toLocal(feet, _b), _box);
+      hit = points.every((p) => segmentHitsBox(_a, frame.toLocal(p, _t), bounds));
     }
-    const mat = obj.material as THREE.MeshToonMaterial;
-    const goal = hit ? 0.25 : 1;
-    if (mat.opacity === goal) continue;
-    mat.opacity += (goal - mat.opacity) * k;
-    if (Math.abs(mat.opacity - goal) < 0.01) mat.opacity = goal;
-    mat.transparent = mat.opacity < 1;
-    // Hide the outline hull while faded, otherwise it shows as a dark slab.
-    for (const child of obj.children) child.visible = mat.opacity > 0.9;
+    fadeTo(obj, hit ? 0.12 : 1, k);
   }
+}
+
+function fadeTo(obj: THREE.Mesh, goal: number, k: number): void {
+  const mat = obj.material as THREE.MeshToonMaterial;
+  if (mat.opacity === goal) return;
+  mat.opacity += (goal - mat.opacity) * k;
+  if (Math.abs(mat.opacity - goal) < 0.01) mat.opacity = goal;
+  const transparent = mat.opacity < 1;
+  // The opaque shader forces alpha to 1, so switching needs a recompile (cached after the first).
+  if (transparent !== mat.transparent) {
+    mat.transparent = transparent;
+    mat.needsUpdate = true;
+  }
+  // A see-through building shouldn't hide what's behind it in the depth buffer either.
+  mat.depthWrite = mat.opacity > 0.9;
+  // Hide the outline hull while faded, otherwise it shows as a dark slab.
+  for (const child of obj.children) child.visible = mat.opacity > 0.9;
 }
 
 const smooth = (t: number) => t * t * (3 - 2 * t);

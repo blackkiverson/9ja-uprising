@@ -6,6 +6,7 @@ import type { Rng } from './rng';
 import { R } from './sphere';
 import { glowMaterial, poolGeometry } from './nightlights';
 import { hullGeometry, outlineMaterial, toonMaterial } from './toon';
+import { Character, type Body, type Outfit } from './character';
 
 type VehicleType = 'car' | 'danfo' | 'keke';
 
@@ -33,6 +34,10 @@ interface Vehicle extends Agent {
   visible: boolean;
   /** Working headlights/tail lights, left and right (plenty of drivers run with one, or none). */
   lights: [boolean, boolean];
+  /** Stays on the road after dark if below the night's cut (most drivers are home by then). */
+  owl: number;
+  /** Off the road for the night. */
+  parked: boolean;
 }
 
 interface Walker extends Agent {
@@ -54,7 +59,9 @@ interface Agbero {
   home: THREE.Vector3;
   face: THREE.Vector3;
   phase: number;
-  look: Look;
+  /** Full character: agberos are people you deal with, not crowd. Built the first time they're seen. */
+  look: { body: Body; outfit: Outfit };
+  character: Character | null;
   appear: number;
   state: AgberoState;
   moving: boolean;
@@ -73,7 +80,7 @@ const _f = new THREE.Vector3();
 const _p = new THREE.Vector3();
 const _o = new THREE.Object3D();
 const _l = new THREE.Matrix4();
-const _red = new THREE.Color();
+const _a = new THREE.Vector3();
 /** Agbero chase speed, m/s: just under the player's 6, so it's a real race. */
 const AGBERO_RUN = 5.1;
 const RED = new THREE.Color(0xe0281c);
@@ -148,7 +155,9 @@ const CAR_PAINT = [0xe9ecdf, 0x9aa3a8, 0x2f3a3a, 0xb5564c, 0x5b8fb0, 0xd8d3c4, 0
  * driving on the right. Busy streets get more traffic and crawl, so go-slows form by themselves.
  */
 export class Traffic {
+  /** Vehicles on the road now; the rest of the fleet is parked for the night. */
   private vehicles: Vehicle[] = [];
+  private fleet: Vehicle[] = [];
   private walkers: Walker[] = [];
   private idlers: { p: THREE.Vector3; up: THREE.Vector3; face: THREE.Vector3; phase: number; look: Look }[] = [];
   /** Off-screen agents tick slowly with simplified rules. */
@@ -156,6 +165,8 @@ export class Traffic {
   private static FAR_TICK = 0.4;
   /** How far from the camera's focus agents are drawn and fully simulated, in play. */
   private static NEAR = 48;
+  /** Share of vehicles off the road at full night. */
+  private static NIGHT_CUT = 0.7;
   private adj = new Map<number, { edge: RoadEdge; from: 'a' | 'b' }[]>();
   private sets: Record<VehicleType, Instances>;
   private bodies: Instances;
@@ -166,6 +177,7 @@ export class Traffic {
   private t = 0;
   /** Touts who come out after dark, mostly round the dead street lamps. */
   private agberos: Agbero[] = [];
+  private agberoGroup = new THREE.Group();
   /** Things the game reacts to (speech): an agbero giving up the chase. */
   private events: { kind: 'gaveUp'; at: THREE.Vector3 }[] = [];
   /** Pulsing red rings under agberos who are coming for the player: back off or run. */
@@ -201,12 +213,14 @@ export class Traffic {
       for (let i = 0; i < counts[type]; i++) {
         const edge = spawnEdge();
         const maxSpeed = type === 'keke' ? rng.range(4, 5.5) : type === 'danfo' ? rng.range(5, 7) : rng.range(6, 8.5);
-        const v: Vehicle = { edge, s: rng.range(0, roads.length(edge)), dir: rng.chance(0.5) ? 1 : -1, speed: 0, type, index: i, maxSpeed, length: type === 'keke' ? 2.4 : type === 'danfo' ? 5 : 4.2, pos: new THREE.Vector3(), color: type === 'car' ? rng.pick(CAR_PAINT) : 0xffffff, fwd: new THREE.Vector3(), smoky: type === 'danfo' || (type === 'keke' ? rng.chance(0.6) : rng.chance(0.33)), visible: false, lights: this.brokenLights() };
+        const v: Vehicle = { edge, s: rng.range(0, roads.length(edge)), dir: rng.chance(0.5) ? 1 : -1, speed: 0, type, index: i, maxSpeed, length: type === 'keke' ? 2.4 : type === 'danfo' ? 5 : 4.2, pos: new THREE.Vector3(), color: type === 'car' ? rng.pick(CAR_PAINT) : 0xffffff, fwd: new THREE.Vector3(), smoky: type === 'danfo' || (type === 'keke' ? rng.chance(0.6) : rng.chance(0.33)), visible: false, lights: this.brokenLights(), owl: (this.fleet.length * 0.618034) % 1, parked: false };
         v.pos.copy(roads.at(edge, v.s).p);
-        this.vehicles.push(v);
+        this.fleet.push(v);
         this.sets[type].color(i, v.color);
       }
     }
+
+    this.vehicles = [...this.fleet];
 
     // Headlights, tail lights and the light the headlights throw on the road.
     const lightCount = this.vehicles.length * 2;
@@ -238,14 +252,15 @@ export class Traffic {
     this.threatRings.count = 0;
     this.threatRings.renderOrder = 6;
     scene.add(this.threatRings);
+    scene.add(this.agberoGroup);
 
     // People: one instanced body, head, headwear and (for hawkers) a load on the head.
-    const people = counts.walkers + hubSpots.length * 3 + this.agberos.length;
+    const people = counts.walkers + hubSpots.length * 3;
     this.bodies = new Instances(scene, new THREE.CapsuleGeometry(0.32, 0.8, 3, 8).translate(0, 0.72, 0), people, { outline: 0.03 });
     this.heads = new Instances(scene, new THREE.SphereGeometry(0.27, 10, 8).translate(0, 1.55, 0), people, { outline: 0.03 });
     this.hats = new Instances(scene, new THREE.SphereGeometry(0.3, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(1.05, 0.8, 1.05).translate(0, 1.62, 0), people);
     this.loads = new Instances(scene, new THREE.CylinderGeometry(0.42, 0.3, 0.2, 12).translate(0, 1.95, 0), people, { outline: 0.03 });
-    this.shadows = new Instances(scene, new THREE.CircleGeometry(1, 12).rotateX(-Math.PI / 2), people + this.vehicles.length, {
+    this.shadows = new Instances(scene, new THREE.CircleGeometry(1, 12).rotateX(-Math.PI / 2), people + this.agberos.length + this.vehicles.length, {
       material: new THREE.MeshBasicMaterial({ color: 0x1f3a3a, transparent: true, opacity: 0.2, depthWrite: false }),
     });
     for (let i = 0; i < counts.walkers; i++) {
@@ -291,11 +306,28 @@ export class Traffic {
         state: 'idle',
         moving: false,
         phase: r.range(0, 6),
-        look: { body: r.pick([0x2b2f30, 0x3d4444, 0x5a3d33, 0x45503a, 0x6b2f2a]), head: r.pick(SKIN), hat: r.pick([0xb5302a, 0x161616, 0x161616]), load: 0 },
+        look: this.agberoLook(),
+        character: null,
         // Some are out at dusk, the rest once it's properly dark.
         appear: r.range(0.35, 0.8),
       });
     }
+  }
+
+  /** Street hard men: broad, dark singlets and tees, a red or black cap or beanie on some. */
+  private agberoLook(): { body: Body; outfit: Outfit } {
+    const r = this.rng;
+    const dark = [0x2b2f30, 0x3d4444, 0x5a3d33, 0x45503a, 0x6b2f2a];
+    const hat = r.chance(0.6) ? { style: r.pick(['cap', 'beanie'] as const), color: r.pick([0xb5302a, 0x161616, 0x161616]) } : undefined;
+    return {
+      body: { skin: r.pick(SKIN), hair: r.pick(['low', 'bald', 'low', 'braids'] as const), hairColor: 0x161210, build: r.range(1.05, 1.15) },
+      outfit: {
+        top: { style: r.pick(['singlet', 'singlet', 'tee'] as const), color: r.pick(dark) },
+        bottom: { style: r.pick(['trousers', 'shorts'] as const), color: r.pick([0x283130, 0x34465e, 0x4a4436]) },
+        shoes: { style: r.pick(['slippers', 'sneakers'] as const), color: r.pick([0x283130, 0xf4f1e6]), accent: 0xb5302a },
+        hat,
+      },
+    };
   }
 
   private look(): Look {
@@ -377,6 +409,18 @@ export class Traffic {
     };
 
     // --- Vehicles ---
+    // At night 70% of the fleet goes home. Cars only leave or rejoin out of view, so nothing pops
+    // (except in the first second, before anything has been seen).
+    const onRoad = 1 - Traffic.NIGHT_CUT * night;
+    let changed = false;
+    for (const v of this.fleet) {
+      const park = v.owl >= onRoad;
+      if (park !== v.parked && (this.t < 1 || !onScreen(v.pos))) {
+        v.parked = park;
+        changed = true;
+      }
+    }
+    if (changed) this.vehicles = this.fleet.filter((v) => !v.parked);
     const slots: Record<VehicleType, number> = { car: 0, danfo: 0, keke: 0 };
     let heads = 0;
     let tails = 0;
@@ -512,18 +556,30 @@ export class Traffic {
         // Not out yet (or gone home at dawn): back at their spot for next time.
         ag.p.copy(ag.home);
         ag.state = 'idle';
+        if (ag.character) ag.character.root.visible = false;
         continue;
       }
-      if (!onScreen(ag.p)) continue;
+      if (!onScreen(ag.p)) {
+        if (ag.character) ag.character.root.visible = false;
+        continue;
+      }
+      _a.copy(ag.p);
       this.hustle(ag, dt, target);
       const up = ag.p.clone().normalize();
       const sway = ag.moving ? 0 : Math.sin(this.t * 1.1 + ag.phase) * 0.35;
       const face = ag.face.clone().applyAxisAngle(up, sway);
       _x.crossVectors(up, face).normalize();
-      // Running gait when chasing, a stroll back to their spot.
-      const chasing = ag.state === 'approach';
-      const at = ag.moving ? ag.p.clone().addScaledVector(up, Math.abs(Math.sin(this.t * (chasing ? 15 : 8) + ag.phase)) * (chasing ? 0.12 : 0.07)) : ag.p;
-      _m.makeBasis(_x, up, face).setPosition(at);
+      _m.makeBasis(_x, up, face).setPosition(ag.p);
+      if (!ag.character) {
+        ag.character = new Character(ag.look.body, ag.look.outfit);
+        ag.character.root.matrixAutoUpdate = false;
+        this.agberoGroup.add(ag.character.root);
+      }
+      const c = ag.character;
+      c.root.visible = true;
+      c.root.matrix.copy(_m);
+      c.animate(dt, ag.moving && dt > 0 ? _a.distanceTo(ag.p) / dt : 0);
+      placeShadow(ag.p, 0.5);
       if (ag.state === 'approach') {
         // Marked out in red while they're coming for you.
         _o.position.copy(ag.p).setLength(R + 0.06);
@@ -531,9 +587,8 @@ export class Traffic {
         _o.scale.setScalar(pulse);
         _o.updateMatrix();
         this.threatRings.setMatrixAt(rings++, _o.matrix);
-        const red = 0.55 + Math.sin(this.t * 9) * 0.2;
-        drawPerson(_m, { ...ag.look, body: _red.setHex(ag.look.body).lerp(RED, red).getHex(), hat: 0xd8261a }, false, ag.p);
-      } else drawPerson(_m, ag.look, false, ag.p);
+        c.glow(RED, 0.12 + Math.sin(this.t * 9) * 0.06);
+      } else c.glow(RED, 0);
     }
     this.threatRings.count = rings;
     this.threatRings.instanceMatrix.needsUpdate = true;
@@ -596,6 +651,13 @@ export class Traffic {
       if (!best || ahead < best.dist) best = { dist: ahead, length: v.length };
     }
     return best;
+  }
+
+  /** Live positions of things worth watching near a point: vehicles, and agberos once they're out. */
+  subjects(near: THREE.Vector3, r: number, night: number): THREE.Vector3[] {
+    const cars = this.vehicles.filter((v) => v.pos.distanceTo(near) < r).map((v) => v.pos);
+    const men = this.agberos.filter((a) => night >= a.appear && a.p.distanceTo(near) < r).map((a) => a.p);
+    return [...cars, ...men];
   }
 
   /** Agberos closing in on the player, within r metres (live positions: read, never write). */

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Collisions } from './collision';
 import { R } from './sphere';
 import { headMarker } from './markers';
-import { toonMesh } from './toon';
+import { Character, OUTFITS, type Outfit } from './character';
 
 const SPEED = 6; // metres per second
 const JUMP_SPEED = 6.5;
@@ -31,37 +31,22 @@ export class PlayerAvatar {
   /** Seconds left on the ground after being shoved. */
   private downTime = 0;
 
+  /** The rigged, dressable body. */
+  readonly character = new Character({ skin: 0x6b4226, hair: 'afro', hairColor: 0x1b1410 }, OUTFITS.starter, { xray: true });
+  private speed = 0;
+
   constructor() {
-    const body = toonMesh(new THREE.CapsuleGeometry(0.45, 1, 4, 8), 0x2e7d5b);
-    body.position.y = 0.95;
-    const head = toonMesh(new THREE.SphereGeometry(0.38, 12, 10), 0x6b4226);
-    head.position.y = 1.95;
-    const afro = toonMesh(new THREE.SphereGeometry(0.42, 12, 10, 0, Math.PI * 2, 0, Math.PI / 2), 0x1b1410);
-    afro.position.y = 2.02;
     this.shadow = new THREE.Mesh(
       new THREE.CircleGeometry(0.6, 16).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ color: 0x1c2b1a, transparent: true, opacity: 0.25, depthWrite: false }),
     );
-    this.figure.add(body, head, afro);
+    this.figure.add(this.character.root);
     this.root.add(this.figure, this.shadow);
-
     this.root.add(this.marker);
+  }
 
-    // X-ray silhouette: drawn only where something (tree, pole, cloud) is in front of the player.
-    const ghost = new THREE.MeshBasicMaterial({
-      color: 0x283130,
-      transparent: true,
-      opacity: 0.45,
-      depthWrite: false,
-      depthFunc: THREE.GreaterDepth,
-    });
-    for (const part of [body, head, afro]) {
-      const g = new THREE.Mesh(part.geometry, ghost);
-      g.position.copy(part.position);
-      g.renderOrder = 10;
-      g.raycast = () => {};
-      this.figure.add(g);
-    }
+  setOutfit(outfit: Outfit): void {
+    this.character.setOutfit(outfit);
   }
 
   /** Position on the ground, ignoring jump height. Use for camera, doors and interactions. */
@@ -199,6 +184,10 @@ export class PlayerAvatar {
       } else this.stuckTime = 0;
     }
 
+    const travelled = this.pos.clone().sub(before);
+    travelled.addScaledVector(up, -travelled.dot(up));
+    this.speed = dt > 0 ? Math.min(SPEED * 1.2, travelled.length() / dt) : 0;
+
     // Bob the head marker gently and keep it facing the camera side (it billboards in syncRoot's frame).
     this.clock += dt;
     this.marker.position.y = this.marker.userData.base + Math.sin(this.clock * 3.2) * 0.12;
@@ -208,6 +197,7 @@ export class PlayerAvatar {
       this.height = Math.max(0, this.height + this.vy * dt);
       if (this.height === 0) this.vy = 0;
     }
+    this.character.animate(dt, this.downTime > 0 ? 0 : this.speed, this.height > 0.05);
     this.syncRoot();
   }
 

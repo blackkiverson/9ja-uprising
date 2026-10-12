@@ -49,7 +49,7 @@ export interface World {
   /** Lights that follow the player so the area around them is always lit the same way. */
   hemi: THREE.HemisphereLight;
   sun: THREE.DirectionalLight;
-  /** Street lamps (some dead, some flickering) and the safe/unsafe split they make at night. */
+  /** Street lamps (some dead) and the safe/unsafe split they make at night. */
   lights: StreetLights;
   /** Buildings the player spends time inside (walking about while busy). */
   interiors: Record<'office' | 'clinic', { frame: Frame; w: number; d: number; mesh: THREE.Mesh }>;
@@ -237,7 +237,8 @@ export function buildWorld(scene: THREE.Scene): World {
   const lamps: Lamp[] = [];
   const lampState = (p: THREE.Vector3): Lamp['state'] => {
     const r = lightRng.next();
-    return unsafeAt(p) ? (r < 0.75 ? 'off' : r < 0.9 ? 'flicker' : 'on') : r < 0.82 ? 'on' : r < 0.92 ? 'flicker' : 'off';
+    // Same draws as when some lamps flickered (those are steady now), so the town is unchanged.
+    return unsafeAt(p) ? (r < 0.75 ? 'off' : 'on') : r < 0.92 ? 'on' : 'off';
   };
   /** A lamp on a post in frame f (+z faces the road): head at (0, y, arm), light falling at (0, 0, reach). */
   const addLamp = (f: Frame, y: number, arm: number, reach: number) => {

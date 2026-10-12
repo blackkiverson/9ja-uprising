@@ -4,10 +4,10 @@ import { R } from './sphere';
 /*
  * Night lighting, faked for phones: no real light sources. Lamp heads and windows glow,
  * and light falls on the ground as additive pools. Nigeria's power supply is part of it:
- * whole patches go dark, some lamps are dead or flicker, some houses have no light.
+ * whole patches go dark, some lamps are dead, some houses have no light. Nothing flickers.
  */
 
-export type LampState = 'on' | 'off' | 'flicker';
+export type LampState = 'on' | 'off';
 
 export interface Lamp {
   /** Lamp head (world), and the matrix that places it. */
@@ -70,13 +70,6 @@ export function glowMaterial(): THREE.MeshBasicMaterial {
   });
 }
 
-/** Flicker: mostly on, with stutters and the odd long drop-out, different for every lamp. */
-export function flicker(t: number, phase: number): number {
-  const stutter = Math.sin(t * 23 + phase) * Math.sin(t * 7.3 + phase * 2.1);
-  const dropout = Math.sin(t * 0.7 + phase * 3.3) > 0.82;
-  return dropout || stutter < -0.45 ? 0.08 : 1;
-}
-
 const _c = new THREE.Color();
 const LIT = new THREE.Color(0xffe2a6);
 const DEAD = new THREE.Color(0x4a4e50);
@@ -111,10 +104,10 @@ export class StreetLights {
 
   /** Brightness of a lamp right now (0 dead or off, 1 full). */
   private level(l: Lamp, t: number): number {
-    return l.state === 'off' ? 0 : l.state === 'flicker' ? flicker(t, l.phase) : 1;
+    return l.state === 'off' ? 0 : 1;
   }
 
-  /** True if a working (or flickering) lamp lights this spot. */
+  /** True if a working lamp lights this spot. */
   isLit(p: THREE.Vector3): boolean {
     return this.lamps.some((l) => l.state !== 'off' && l.poolAt.distanceToSquared(p) < 7.5 * 7.5);
   }

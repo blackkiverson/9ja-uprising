@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { applyAction } from './actions';
 import { MINUTES_PER_DAY, type WorldTime } from './clock';
 import { checkChoice, greetingNode } from './dialogue';
+import { STARTING_MONEY } from './data';
 import { NPCS } from './npcs';
 import { createPlayer, type PlayerState } from './state';
 
@@ -46,9 +47,9 @@ describe('dialogue', () => {
   it('takes a salary advance back out of the next shift', () => {
     let p: PlayerState = { ...createPlayer(), relationships: { oga_bayo: 50 }, location: 'office' };
     p = ok(applyAction(p, { type: 'dialogue', npc: 'oga_bayo', node: 'trusted', choice: 0 }, at(1)));
-    expect(p.money).toBe(15000);
+    expect(p.money).toBe(STARTING_MONEY + 5000);
     p = ok(applyAction(p, { type: 'work_shift' }, at(2, 8 * 60)));
-    expect(p.money).toBe(15000 + 6000 - 5000);
+    expect(p.money).toBe(STARTING_MONEY + 5000 + 6000 - 5000);
     expect(p.flags.oga_advance).toBe(false);
   });
 
