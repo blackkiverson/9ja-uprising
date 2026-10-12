@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { CLOTHES, type BottomStyle, type HairStyle, type HatStyle, type ShoeStyle, type TopStyle, type WornOutfit } from '@9ja/shared';
 import { outlineMaterial, toonMaterial } from './toon';
+import { hdParts, rigid, type Limb, type Part } from './character-hd';
 
 /*
  * A rigged, low-poly figure built from primitives, dressed from an Outfit.
@@ -10,17 +12,12 @@ import { outlineMaterial, toonMaterial } from './toon';
  * a style and colours, which decides the colour of the body segments it covers and adds any extra
  * pieces (sleeves, cuffs, hems, skirts, soles, hats). The pieces are baked into one skinned mesh
  * bound rigidly to the bones, so a dressed figure costs two draw calls (three with the x-ray
- * ghost), and changing clothes is just a re-bake. Outfits can be bought and swapped in play later
- * without touching the rig.
+ * ghost), and changing clothes is just a re-bake. What can be bought lives in shared CLOTHES.
  *
  * Local axes: +y up, +z the way the figure faces.
  */
 
-export type HairStyle = 'afro' | 'low' | 'puff' | 'braids' | 'bald';
-export type TopStyle = 'tee' | 'singlet' | 'shirt' | 'buba' | 'kaftan';
-export type BottomStyle = 'trousers' | 'shorts' | 'wrapper';
-export type ShoeStyle = 'slippers' | 'sneakers' | 'sandals' | 'shoes';
-export type HatStyle = 'cap' | 'fila' | 'kufi' | 'headtie' | 'beanie';
+export type { BottomStyle, HairStyle, HatStyle, ShoeStyle, TopStyle };
 
 export interface Garment<S extends string> {
   style: S;
@@ -77,23 +74,23 @@ export const OUTFITS = {
 } satisfies Record<string, Outfit>;
 export type OutfitId = keyof typeof OUTFITS;
 
-interface Limb {
-  /** Shoulder or hip joint. */
-  upper: THREE.Bone;
-  /** Elbow or knee joint. */
-  lower: THREE.Bone;
-  /** Hand or ankle. */
-  end: THREE.Bone;
-  /** -1 on the left (−x), +1 on the right. */
-  side: number;
+/** A saved outfit (item ids) as something the rig can wear. */
+export function outfitOf(worn: WornOutfit): Outfit {
+  const g = <S extends string>(id: keyof typeof CLOTHES) => {
+    const c = CLOTHES[id];
+    return { style: c.style as S, color: c.color, ...('accent' in c ? { accent: c.accent } : {}) };
+  };
+  return {
+    top: g<TopStyle>(worn.top),
+    bottom: g<BottomStyle>(worn.bottom),
+    shoes: g<ShoeStyle>(worn.shoes),
+    ...(worn.hat ? { hat: g<HatStyle>(worn.hat) } : {}),
+  };
 }
 
-/** One primitive of the figure: its shape in its bone's space, a colour, and the bone it rides. */
-interface Part {
-  geo: THREE.BufferGeometry;
-  color: number;
-  bone: THREE.Bone;
-  outline: boolean;
+/** Same clothes? (Cheap check before a re-bake.) */
+export function sameOutfit(a: WornOutfit, b: WornOutfit): boolean {
+  return a.top === b.top && a.bottom === b.bottom && a.shoes === b.shoes && a.hat === b.hat;
 }
 
 const HIP_Y = 0.94;
@@ -135,40 +132,49 @@ function ghost(): THREE.MeshBasicMaterial {
 }
 
 /**
- * Bakes parts into one skinned geometry: every part is moved into the figure's rest pose and bound
- * rigidly (weight 1) to its bone. hull: welded copies with smooth normals, for the outline.
+ * Bakes parts (already skinned, in rest space) into one geometry. hull: welded copies with smooth
+ * normals and no face details, for the outline.
  */
-function bake(parts: Part[], index: Map<THREE.Bone, number>, rest: Map<THREE.Bone, THREE.Matrix4>, hull: boolean): THREE.BufferGeometry {
+function bake(parts: Part[], hull: boolean): THREE.BufferGeometry {
   const geos: THREE.BufferGeometry[] = [];
   const color = new THREE.Color();
   for (const part of parts) {
     if (hull && !part.outline) continue;
-    let g = part.geo.clone().applyMatrix4(rest.get(part.bone)!);
+    let g: THREE.BufferGeometry;
     if (hull) {
       const bare = new THREE.BufferGeometry();
-      bare.setAttribute('position', g.getAttribute('position'));
-      if (g.index) bare.setIndex(g.index);
+      for (const k of ['position', 'skinIndex', 'skinWeight']) bare.setAttribute(k, part.geo.getAttribute(k));
+      const index = part.geo.index;
+      const shows = part.geo.getAttribute('bare');
+      // Only what no outer layer covers gets an outline.
+      if (index && shows) {
+        const kept: number[] = [];
+        for (let i = 0; i < index.count; i += 3) {
+          const [a, b, c] = [index.getX(i), index.getX(i + 1), index.getX(i + 2)];
+          if (shows.getX(a) && shows.getX(b) && shows.getX(c)) kept.push(a, b, c);
+        }
+        if (!kept.length) continue;
+        bare.setIndex(kept);
+      } else if (index) bare.setIndex(index);
       g = mergeVertices(bare, 1e-3);
       g.computeVertexNormals();
     } else {
+      g = part.geo.clone();
       g.deleteAttribute('uv');
       if (!g.index) g = mergeVertices(g);
+      // Painted vertices (prints) keep their colour; the rest take the part's.
       color.setHex(part.color);
       const n = g.getAttribute('position').count;
+      const paint = g.getAttribute('paint');
       const c = new Float32Array(n * 3);
-      for (let i = 0; i < n; i++) color.toArray(c, i * 3);
+      for (let i = 0; i < n; i++) {
+        if (paint && paint.getX(i) >= 0) c.set([paint.getX(i), paint.getY(i), paint.getZ(i)], i * 3);
+        else color.toArray(c, i * 3);
+      }
+      g.deleteAttribute('paint');
+      g.deleteAttribute('bare');
       g.setAttribute('color', new THREE.BufferAttribute(c, 3));
     }
-    const n = g.getAttribute('position').count;
-    const si = new Uint16Array(n * 4);
-    const sw = new Float32Array(n * 4);
-    const b = index.get(part.bone)!;
-    for (let i = 0; i < n; i++) {
-      si[i * 4] = b;
-      sw[i * 4] = 1;
-    }
-    g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
-    g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
     geos.push(g);
   }
   const merged = mergeGeometries(geos)!;
@@ -190,7 +196,7 @@ export class Character {
   private skeleton!: THREE.Skeleton;
   private boneIndex = new Map<THREE.Bone, number>();
   private rest = new Map<THREE.Bone, THREE.Matrix4>();
-  private material = toonMaterial(0xffffff, { vertexColors: true });
+  private material = toonMaterial(0xffffff, { vertexColors: true, figure: true });
   /** Body, outline and (for the player) x-ray ghost: the whole figure in two or three draw calls. */
   private meshes: THREE.SkinnedMesh[] = [];
   private skirt = false;
@@ -202,7 +208,8 @@ export class Character {
   constructor(
     private body: Body,
     private outfit: Outfit = OUTFITS.starter,
-    private opts: { xray?: boolean } = {},
+    /** xray: a see-through silhouette behind walls. hd: the high-detail body (the player). */
+    private opts: { xray?: boolean; hd?: boolean } = {},
   ) {
     this.rig();
     this.rebuild();
@@ -263,12 +270,21 @@ export class Character {
 
   /** Everything the body and outfit put on the rig, as parts in bone space. */
   private parts(): Part[] {
+    if (this.opts.hd) {
+      const hd = hdParts(
+        { hips: this.hips, chest: this.chest, head: this.head, arms: this.arms, legs: this.legs, index: this.boneIndex, rest: this.rest },
+        this.body,
+        this.outfit,
+      );
+      this.skirt = hd.skirt;
+      return hd.parts;
+    }
     const parts: Part[] = [];
     const { body, outfit } = this;
     const { top, bottom, shoes, hat } = outfit;
     const w = body.build ?? 1;
     const skin = body.skin;
-    const add = (geo: THREE.BufferGeometry, color: number, bone: THREE.Bone, outline = true) => parts.push({ geo, color, bone, outline });
+    const add = (geo: THREE.BufferGeometry, color: number, bone: THREE.Bone, outline = true) => parts.push({ geo: rigid(geo, bone, { index: this.boneIndex, rest: this.rest }), color, outline });
     const trim = (g: Garment<string>, fallback: number) => g.accent ?? fallback;
 
     // What each garment covers.
@@ -392,8 +408,8 @@ export class Character {
     }
     this.meshes = [];
     const parts = this.parts();
-    const bodyGeo = bake(parts, this.boneIndex, this.rest, false);
-    const hullGeo = bake(parts, this.boneIndex, this.rest, true);
+    const bodyGeo = bake(parts, false);
+    const hullGeo = bake(parts, true);
     for (const p of parts) p.geo.dispose();
 
     const make = (geo: THREE.BufferGeometry, mat: THREE.Material, order: number) => {

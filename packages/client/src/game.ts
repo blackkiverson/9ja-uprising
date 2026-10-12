@@ -7,9 +7,9 @@ function load(): PlayerState {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<Omit<PlayerState, 'version'>> & { version?: number };
-      // Older saves: v1 predates story flags, v2 health and weapons, v3 the personal clock.
-      if (parsed.version !== undefined && parsed.version >= 1 && parsed.version <= 4) {
-        return { ...createPlayer(), ...parsed, flags: parsed.flags ?? {}, version: 4 } as PlayerState;
+      // Older saves: v1 predates story flags, v2 health and weapons, v3 the personal clock, v4 clothes.
+      if (parsed.version !== undefined && parsed.version >= 1 && parsed.version <= 5) {
+        return { ...createPlayer(), ...parsed, flags: parsed.flags ?? {}, version: 5 } as PlayerState;
       }
     }
   } catch {

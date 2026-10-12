@@ -1,6 +1,6 @@
 import '@fontsource/bungee';
 import * as THREE from 'three';
-import { AGBERO, AGBERO_LINES, CLINIC, DANFO_ROUTES, KNOCKOUT, OFFICE_SHIFT, agberosSettled, formatClock } from '@9ja/shared';
+import { AGBERO, AGBERO_LINES, CLINIC, DANFO_ROUTES, KNOCKOUT, OFFICE_SHIFT, STARTER_OUTFIT, agberosSettled, formatClock, isClothingId, type WornOutfit } from '@9ja/shared';
 import { Bubbles } from './bubbles';
 import { Tips, type TipId } from './tips';
 import { Game } from './game';
@@ -20,7 +20,8 @@ import { Smoke } from './scene/smoke';
 import { Space } from './scene/space';
 import { Rng } from './scene/rng';
 import { PlayerAvatar } from './scene/player';
-import { OUTFITS, type OutfitId } from './scene/character';
+import { outfitOf, sameOutfit } from './scene/character';
+import { Closet } from './closet';
 import { MoveMarker } from './scene/markers';
 import { findPath } from './scene/pathfind';
 import { chartOf, raySphere } from './scene/sphere';
@@ -63,8 +64,10 @@ const hud = new Hud(
   (to) => boardDanfo(to),
   (npc) => dialogue.open(npc),
   (minutes) => startLapse(minutes),
+  (mode) => closet.open(mode),
 );
 dialogue = new Dialogue(game, (text) => hud.toast(text));
+const closet = new Closet(game, (text) => hud.toast(text));
 // E talks to whoever is closest.
 window.addEventListener('keydown', (e) => {
   if (e.code !== 'KeyE' || dialogue.isOpen || intro.active) return;
@@ -84,7 +87,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   const hit = raySphere(raycaster.ray);
   // This runs before the pinch tracker below records the new pointer, so any pointer
   // already held means this is a second finger (pinch-zoom), not a move order.
-  if (hit && !isBusy() && !intro.active && !dialogue.isOpen && touches.size === 0) {
+  if (hit && !isBusy() && !intro.active && !dialogue.isOpen && !closet.isOpen && touches.size === 0) {
     // Route round buildings and walls; fall back to walking straight if no route is found.
     player.followPath(findPath(world.collisions, player.ground, hit) ?? [hit]);
     moveMarker.show(hit.clone().setLength(hit.length() + world.heightAt(hit)));
@@ -183,11 +186,18 @@ window.addEventListener('keydown', (e) => {
     history.replaceState(null, '', `${location.pathname}${params.size ? `?${params}` : ''}${location.hash}`);
   }
 }
-// ?outfit=street previews one of the starter outfits (until outfits are owned and saved).
-{
-  const id = new URLSearchParams(location.search).get('outfit');
-  if (id && id in OUTFITS) player.setOutfit(OUTFITS[id as OutfitId]);
+// What the player has on: their saved outfit, or what they're trying on at the stall.
+let shownOutfit: WornOutfit | null = null;
+function syncOutfit(): void {
+  const saved = game.state.outfit;
+  // A save from a future (or broken) build might name clothes this one doesn't know.
+  const worn = closet.preview ?? (validOutfit(saved) ? saved : STARTER_OUTFIT);
+  if (shownOutfit && sameOutfit(worn, shownOutfit)) return;
+  player.setOutfit(outfitOf(worn));
+  shownOutfit = { ...worn };
 }
+const validOutfit = (o: WornOutfit | undefined): o is WornOutfit =>
+  !!o && isClothingId(o.top) && isClothingId(o.bottom) && isClothingId(o.shoes) && (o.hat === null || isClothingId(o.hat));
 if (new URLSearchParams(location.search).has('skipIntro')) {
   intro.skip();
   introEl.classList.add('leaving');
@@ -487,7 +497,7 @@ renderer.setAnimationLoop(() => {
   }
   // While the time-lapse camera is out at the planet, everything visible keeps living.
   const cinematic = lapseCam.active;
-  const busy = isBusy() || !playing || dialogue.isOpen || lapse !== null;
+  const busy = isBusy() || !playing || dialogue.isOpen || closet.isOpen || lapse !== null;
   if (keyboard.consumeJump() && !busy) player.jump();
 
   // WASD is relative to the screen: W walks "up" the screen along the planet.
@@ -515,6 +525,9 @@ renderer.setAnimationLoop(() => {
 
   const near = playing ? nearestPlace() : null;
   if (near && near.id !== game.state.location) game.dispatch({ type: 'enter', location: near.id });
+  // Knocked away from the stall or the house (a car, an agbero): the panel goes.
+  if (closet.isOpen && near?.id !== (closet.openMode === 'shop' ? 'market' : 'home')) closet.close();
+  syncOutfit();
 
   const ground = player.ground;
   if (playing && cinematic && lapse) lapseCam.update(lapse.t, lapse.dur, camera, rig, ground);
@@ -522,7 +535,16 @@ renderer.setAnimationLoop(() => {
     // Inside a building the camera watches the building (or wanders, if left alone), and nothing
     // fades: it's what you look at.
     const watching = updateTour(dt);
-    const home = stay ? world.interiors[stay.kind].frame.c : ground;
+    // Trying on clothes: close in, low, and keep the player clear of the panel (beside it on wide
+    // screens, above it on phones). They turn to face you.
+    rig.closeUp += ((closet.isOpen ? 1 : 0) - rig.closeUp) * (1 - Math.exp(-4 * dt));
+    if (rig.closeUp < 0.001) rig.closeUp = 0;
+    let home = stay ? world.interiors[stay.kind].frame.c : ground;
+    if (rig.closeUp > 0) {
+      const wide = camera.aspect > 1;
+      home = ground.clone().addScaledVector(wide ? rig.right : rig.forward, (wide ? 1.3 : -2.6) * rig.closeUp);
+      if (closet.isOpen) player.turnTowards(camera.position.clone().sub(ground).normalize(), dt);
+    }
     // The tour steers the camera itself (smooth glides); a tap snaps it home.
     rig.update(watching ?? home, dt, tour.back || watching !== null);
     tour.back = false;
@@ -546,7 +568,7 @@ renderer.setAnimationLoop(() => {
   bubbles.update(camera);
   smoke.update(dt * (1 + rush * 2), camera, focus, traffic.exhausts());
   moveMarker.update(dt);
-  player.setMarkerVisible(playing && !rideTo && !stay);
+  player.setMarkerVisible(playing && !rideTo && !stay && !closet.isOpen);
   // Out of sight while on a danfo or inside a building.
   player.root.visible = !rideTo && !stay;
   player.faceMarker(camera);
@@ -564,6 +586,7 @@ renderer.setAnimationLoop(() => {
 
   document.body.classList.toggle('playing', playing);
   document.body.classList.toggle('talking', dialogue.isOpen);
+  document.body.classList.toggle('closet', closet.isOpen);
   document.body.classList.toggle('lapse', lapse !== null);
   // First-time info cards for whatever the player has just run into.
   if (playing && !lapse && !rideTo) {

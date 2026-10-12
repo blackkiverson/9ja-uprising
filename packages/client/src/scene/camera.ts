@@ -4,6 +4,7 @@ import { northAt } from './sphere';
 // League-style camera adapted to a planet: angled down ~55 degrees, follows the player over the
 // curve. "Screen up" (forward) is carried along as you walk, so the view never spins.
 const PITCH = THREE.MathUtils.degToRad(55);
+const CLOSE_PITCH = THREE.MathUtils.degToRad(22);
 
 /** Fixed play distance: close enough to feel the curve. The player cannot zoom. */
 export const PLAY_DISTANCE = 40;
@@ -32,14 +33,18 @@ export class CameraRig {
     this.update(start, 1, true);
   }
 
+  /** Close-up for trying on clothes: 0 is the normal view, 1 is near and low, looking at the figure. */
+  closeUp = 0;
+
   /** Where the camera sits for the current focus (also the end point of the intro flight). */
   desiredPosition(out = new THREE.Vector3()): THREE.Vector3 {
     // Portrait phones see less horizontally, so pull back further.
-    const d = PLAY_DISTANCE * Math.max(1, Math.sqrt(1.2 / this.camera.aspect));
+    const d = PLAY_DISTANCE * Math.max(1, Math.sqrt(1.2 / this.camera.aspect)) * THREE.MathUtils.lerp(1, 0.2, this.closeUp);
+    const pitch = THREE.MathUtils.lerp(PITCH, CLOSE_PITCH, this.closeUp);
     return out
       .copy(this.focus)
-      .addScaledVector(this.up, Math.sin(PITCH) * d)
-      .addScaledVector(this.forward, -Math.cos(PITCH) * d);
+      .addScaledVector(this.up, Math.sin(pitch) * d + this.closeUp * 1)
+      .addScaledVector(this.forward, -Math.cos(pitch) * d);
   }
 
   /** Re-centre on a point anywhere on the planet, with screen-up pointing north there. */
@@ -65,9 +70,11 @@ export class CameraRig {
     this.right.crossVectors(this.forward, this.up).normalize();
     this.desiredPosition(this.camera.position);
     this.camera.up.copy(this.up);
-    this.camera.lookAt(this.focus);
+    // In a close-up, look at the chest rather than the feet.
+    this.camera.lookAt(_look.copy(this.focus).addScaledVector(this.up, this.closeUp * 1));
   }
 }
+const _look = new THREE.Vector3();
 
 /**
  * Title view: the whole planet slowly turning, then a flight down to the player on Begin.

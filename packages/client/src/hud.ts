@@ -15,6 +15,8 @@ export class Hud {
     private onTalk: (npc: NpcId) => void,
     /** Time was skipped (fast-forward, sleep): play the time-lapse over these minutes. */
     private onSkip: (minutes: number) => void,
+    /** Open the clothes stall (market) or the wardrobe (home). */
+    private onCloset: (mode: 'shop' | 'wardrobe') => void,
   ) {}
 
   /**
@@ -106,16 +108,15 @@ export class Hud {
       return;
     }
 
-    if (npc) {
-      const btn = document.createElement('button');
-      btn.textContent = `Talk to ${NPCS[npc].name}`;
-      btn.addEventListener('click', () => this.onTalk(npc));
-      actions.append(btn);
-    }
+    if (npc) this.button(`Talk to ${NPCS[npc].name}`, () => this.onTalk(npc));
 
     switch (near?.id) {
       case 'home':
         add('Sleep', { type: 'sleep' });
+        this.button('👔 Wardrobe', () => this.onCloset('wardrobe'));
+        break;
+      case 'market':
+        this.button('👕 Clothes stall', () => this.onCloset('shop'));
         break;
       case 'office':
         add(`Work shift (+${naira(OFFICE_SHIFT.pay)})`, { type: 'work_shift' });
@@ -147,5 +148,13 @@ export class Hud {
     for (const [id, count] of Object.entries(s.inventory)) {
       if (count) add(`Eat ${FOOD[id as FoodId].name} (${count})`, { type: 'eat', item: id as FoodId });
     }
+  }
+
+  /** A plain action-bar button that opens something rather than dispatching an action. */
+  private button(label: string, onClick: () => void): void {
+    const btn = document.createElement('button');
+    btn.textContent = label;
+    btn.addEventListener('click', onClick);
+    $('actions').append(btn);
   }
 }

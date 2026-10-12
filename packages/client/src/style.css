@@ -192,3 +192,40 @@ body:not(.playing) #stay-pie { display: none; }
   background: conic-gradient(#4f8f5a calc(var(--p) * 1turn), var(--paper) 0); }
 #stay-pie span { padding: 2px 8px; border: 2px solid var(--ink); border-radius: 8px; background: var(--paper);
   font-size: 12px; font-weight: 800; white-space: nowrap; }
+
+/* Clothes: market stall and home wardrobe. A side panel on wide screens, a bottom sheet on phones;
+   the camera closes in on the player beside it. */
+#closet { position: fixed; z-index: 5; right: 16px; top: 50%; transform: translateY(-50%); width: 360px;
+  max-height: calc(100% - 140px); display: flex; flex-direction: column; gap: 10px; padding: 14px;
+  background: var(--paper); border: 3px solid var(--ink); border-radius: 14px; box-shadow: 0 5px 0 var(--ink); }
+#closet[hidden] { display: none; }
+body:not(.playing) #closet { display: none; }
+.closet-head { display: flex; align-items: center; gap: 10px; }
+.closet-head strong { font-family: 'Bungee', system-ui, sans-serif; font-weight: 400; font-size: 18px; flex: 1; }
+#closet-money { font-weight: 800; font-size: 14px; color: var(--accent); }
+#closet-close { font: inherit; font-weight: 800; width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--ink);
+  background: #fff; color: var(--ink); cursor: pointer; }
+#closet-tabs { display: flex; gap: 6px; }
+#closet-tabs button { flex: 1; font: inherit; font-weight: 700; font-size: 13px; padding: 7px 4px; border-radius: 999px;
+  border: 2px solid var(--ink); background: #fff; color: var(--ink); cursor: pointer; }
+#closet-tabs button.on { background: var(--ink); color: var(--paper); }
+#closet-items { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; overflow-y: auto; min-height: 0; padding: 2px; }
+.closet-item { display: flex; align-items: center; gap: 8px; text-align: left; font: inherit; padding: 8px;
+  border: 2px solid var(--ink); border-radius: 10px; background: #fff; color: var(--ink); cursor: pointer; }
+.closet-item:hover { background: #f3f0e6; }
+.closet-item.on { background: #e9f3ea; box-shadow: inset 0 0 0 2px var(--accent); }
+.closet-item .swatch { flex: none; width: 32px; height: 32px; border-radius: 8px; border: 2px solid var(--ink); }
+.closet-item .swatch.none { background: repeating-linear-gradient(45deg, #fff 0 4px, #ddd6c8 4px 8px); }
+.closet-item .label { display: flex; flex-direction: column; min-width: 0; }
+.closet-item strong { font-size: 13px; line-height: 1.2; }
+.closet-item small { font-size: 12px; font-weight: 700; color: var(--muted); }
+.closet-empty { grid-column: 1 / -1; margin: 6px 0; color: var(--muted); font-size: 14px; }
+.closet-foot { display: flex; align-items: center; gap: 10px; min-height: 40px; }
+#closet-note { flex: 1; font-size: 13px; font-weight: 600; color: var(--muted); }
+#closet-buy { font: inherit; font-weight: 700; font-size: 15px; padding: 10px 16px; border-radius: 10px; border: 2px solid var(--ink);
+  background: var(--accent); color: #fff; cursor: pointer; }
+#closet-buy:disabled { background: var(--muted); cursor: not-allowed; }
+body.closet #actions, body.closet #place { display: none !important; }
+@media (max-aspect-ratio: 1/1) {
+  #closet { left: 16px; right: 16px; top: auto; bottom: 16px; transform: none; width: auto; max-height: 48%; }
+}

@@ -1,8 +1,9 @@
+import { STARTER_OUTFIT, STARTER_WARDROBE, type ClothingId, type WornOutfit } from './clothes';
 import { STARTING_MONEY, MAX_ENERGY, type FoodId, type LocationId, type WeaponId } from './data';
 
 // One serialisable save object. In multiplayer the server holds this per player.
 export interface PlayerState {
-  version: 4;
+  version: 5;
   money: number;
   energy: number;
   /** 0-100. Unused until fights, injuries and police arrive. */
@@ -11,6 +12,9 @@ export interface PlayerState {
   weapon: WeaponId;
   location: LocationId;
   inventory: Partial<Record<FoodId, number>>;
+  /** Clothes owned, and what's on right now. */
+  wardrobe: ClothingId[];
+  outfit: WornOutfit;
   relationships: Record<string, number>;
   /** Story flags and once-per-day markers (value = world day). */
   flags: Record<string, boolean | number>;
@@ -30,13 +34,15 @@ export type BusyWith = 'work' | 'travel' | 'recovering' | 'treatment';
 
 export function createPlayer(): PlayerState {
   return {
-    version: 4,
+    version: 5,
     money: STARTING_MONEY,
     energy: MAX_ENERGY,
     health: 100,
     weapon: 'fist',
     location: 'home',
     inventory: {},
+    wardrobe: [...STARTER_WARDROBE],
+    outfit: { ...STARTER_OUTFIT },
     relationships: {},
     flags: {},
     personalDay: 1,

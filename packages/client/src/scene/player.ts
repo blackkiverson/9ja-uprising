@@ -32,7 +32,7 @@ export class PlayerAvatar {
   private downTime = 0;
 
   /** The rigged, dressable body. */
-  readonly character = new Character({ skin: 0x6b4226, hair: 'afro', hairColor: 0x1b1410 }, OUTFITS.starter, { xray: true });
+  readonly character = new Character({ skin: 0x6b4226, hair: 'afro', hairColor: 0x1b1410 }, OUTFITS.starter, { xray: true, hd: true });
   private speed = 0;
 
   constructor() {
@@ -43,6 +43,11 @@ export class PlayerAvatar {
     this.figure.add(this.character.root);
     this.root.add(this.figure, this.shadow);
     this.root.add(this.marker);
+  }
+
+  /** Turn on the spot towards a direction (eased), e.g. to face the camera. */
+  turnTowards(dir: THREE.Vector3, dt: number): void {
+    this.facing.lerp(dir, 1 - Math.exp(-6 * dt));
   }
 
   setOutfit(outfit: Outfit): void {

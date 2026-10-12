@@ -2,24 +2,32 @@ import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Three-step gradient gives the flat, banded toon look from the GDD.
-let gradient: THREE.DataTexture | null = null;
-function gradientMap(): THREE.DataTexture {
-  if (gradient) return gradient;
-  const steps = new Uint8Array([125, 195, 255]);
+const gradients = new Map<string, THREE.DataTexture>();
+function gradientMap(steps: number[]): THREE.DataTexture {
+  const key = steps.join();
+  const cached = gradients.get(key);
+  if (cached) return cached;
   const data = new Uint8Array(steps.length * 4);
   steps.forEach((v, i) => data.set([v, v, v, 255], i * 4));
-  gradient = new THREE.DataTexture(data, steps.length, 1);
-  gradient.minFilter = THREE.NearestFilter;
-  gradient.magFilter = THREE.NearestFilter;
-  gradient.needsUpdate = true;
-  return gradient;
+  const g = new THREE.DataTexture(data, steps.length, 1);
+  g.minFilter = THREE.NearestFilter;
+  g.magFilter = THREE.NearestFilter;
+  g.needsUpdate = true;
+  gradients.set(key, g);
+  return g;
 }
 
+/**
+ * figure: bands for people. The shadow edge sits on the terminator (half the steps are shade), so a
+ * back turned from the sun shades as one piece instead of an island in the middle, and the lit side
+ * gets a highlight band.
+ */
 export function toonMaterial(
   color: THREE.ColorRepresentation = 0xffffff,
-  opts: { vertexColors?: boolean } = {},
+  opts: { vertexColors?: boolean; figure?: boolean } = {},
 ): THREE.MeshToonMaterial {
-  return new THREE.MeshToonMaterial({ color, gradientMap: gradientMap(), vertexColors: opts.vertexColors ?? false });
+  const steps = opts.figure ? [140, 140, 212, 255] : [125, 195, 255];
+  return new THREE.MeshToonMaterial({ color, gradientMap: gradientMap(steps), vertexColors: opts.vertexColors ?? false });
 }
 
 const outlineCache = new Map<number, THREE.MeshBasicMaterial>();

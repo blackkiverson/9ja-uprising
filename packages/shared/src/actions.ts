@@ -1,5 +1,6 @@
 import { MINUTES_PER_DAY, formatClock, type WorldTime } from './clock';
 import { AGBERO, CLINIC, DANFO, skipPrice, DANFO_ROUTES, FOOD, HIT_MIN_SPEED, KNOCKOUT, MAX_ENERGY, OFFICE_SHIFT, SLEEP, VEHICLE_HIT, type FoodId, type LocationId, type TreatmentId, type VehicleKind } from './data';
+import { CLOTHES, type ClothingId, type ClothingSlot } from './clothes';
 import { applyChoice, checkChoice, type NpcId } from './dialogue';
 import type { PlayerState } from './state';
 
@@ -18,6 +19,10 @@ export type Action =
   | { type: 'arrive' }
   | { type: 'treat'; treatment: TreatmentId }
   | { type: 'settle_agberos' }
+  /** At the market: buy an item (you put it straight on). */
+  | { type: 'buy_clothes'; item: ClothingId }
+  /** At home: change into something you own. Only the hat slot can be left empty (null). */
+  | { type: 'wear'; slot: ClothingSlot; item: ClothingId | null }
   /** push: shoved to the ground (health); rob: pockets emptied (money). The caller rolls which. */
   | { type: 'agbero_rough_up'; kind: 'push' | 'rob' };
 
@@ -79,6 +84,32 @@ export function applyAction(prev: PlayerState, action: Action, now: WorldTime): 
       s.money -= food.price;
       s.inventory[action.item] = (s.inventory[action.item] ?? 0) + 1;
       return { ok: true, state: s, message: `Bought ${food.name}.` };
+    }
+
+    case 'buy_clothes': {
+      if (s.location !== 'market') return fail('Clothes are sold at the market.');
+      const c = CLOTHES[action.item];
+      if (!c) return fail('The trader no get that one.');
+      if (s.wardrobe.includes(action.item)) return fail('You already own that.');
+      if (s.money < c.price) return fail(`${c.name} costs ₦${c.price.toLocaleString()}. You no get am.`);
+      s.money -= c.price;
+      s.wardrobe.push(action.item);
+      s.outfit[c.slot] = action.item;
+      return { ok: true, state: s, message: `Bought ${c.name}. Fresh!` };
+    }
+
+    case 'wear': {
+      if (s.location !== 'home') return fail('Change at home.');
+      if (action.item === null) {
+        if (action.slot !== 'hat') return fail('You cannot go out without that.');
+        s.outfit.hat = null;
+        return { ok: true, state: s, message: '' };
+      }
+      const c = CLOTHES[action.item];
+      if (!c || c.slot !== action.slot) return fail('That does not go there.');
+      if (!s.wardrobe.includes(action.item)) return fail('You do not own that.');
+      s.outfit[c.slot] = action.item;
+      return { ok: true, state: s, message: '' };
     }
 
     case 'eat': {
