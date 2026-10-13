@@ -7,9 +7,9 @@ function load(): PlayerState {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<Omit<PlayerState, 'version'>> & { version?: number };
-      // Older saves: v1 predates story flags, v2 health and weapons, v3 the personal clock, v4 clothes.
-      if (parsed.version !== undefined && parsed.version >= 1 && parsed.version <= 5) {
-        return { ...createPlayer(), ...parsed, flags: parsed.flags ?? {}, version: 5 } as PlayerState;
+      // Older saves: v1 predates story flags, v2 health and weapons, v3 the personal clock, v4 clothes, v5 respect and parcels.
+      if (parsed.version !== undefined && parsed.version >= 1 && parsed.version <= 6) {
+        return { ...createPlayer(), ...parsed, flags: parsed.flags ?? {}, version: 6 } as PlayerState;
       }
     }
   } catch {
@@ -25,6 +25,7 @@ function load(): PlayerState {
 export class Game {
   state: PlayerState = load();
   private listeners = new Set<() => void>();
+  private dailyListeners = new Set<(reward: string) => void>();
 
   /** The player's personal time: world clock plus their offset. */
   now() {
@@ -46,6 +47,7 @@ export class Game {
         // Ignore: the game still runs without persistence.
       }
       this.listeners.forEach((fn) => fn());
+      if (result.daily) this.dailyListeners.forEach((fn) => fn(result.daily!));
     }
     return result;
   }
@@ -68,5 +70,10 @@ export class Game {
 
   onChange(fn: () => void): void {
     this.listeners.add(fn);
+  }
+
+  /** Today's task was just completed; reward is the line to show. */
+  onDaily(fn: (reward: string) => void): void {
+    this.dailyListeners.add(fn);
   }
 }

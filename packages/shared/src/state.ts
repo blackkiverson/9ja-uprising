@@ -1,9 +1,10 @@
+import type { Errand } from './errands';
 import { STARTER_OUTFIT, STARTER_WARDROBE, type ClothingId, type WornOutfit } from './clothes';
 import { STARTING_MONEY, MAX_ENERGY, type FoodId, type LocationId, type WeaponId } from './data';
 
 // One serialisable save object. In multiplayer the server holds this per player.
 export interface PlayerState {
-  version: 5;
+  version: 6;
   money: number;
   energy: number;
   /** 0-100. Unused until fights, injuries and police arrive. */
@@ -15,6 +16,10 @@ export interface PlayerState {
   /** Clothes owned, and what's on right now. */
   wardrobe: ClothingId[];
   outfit: WornOutfit;
+  /** 0-100: how the streets see you. Earned by keeping your word and helping people. */
+  respect: number;
+  /** The parcel you're carrying, if any. */
+  errand: Errand | null;
   relationships: Record<string, number>;
   /** Story flags and once-per-day markers (value = world day). */
   flags: Record<string, boolean | number>;
@@ -34,7 +39,7 @@ export type BusyWith = 'work' | 'travel' | 'recovering' | 'treatment';
 
 export function createPlayer(): PlayerState {
   return {
-    version: 5,
+    version: 6,
     money: STARTING_MONEY,
     energy: MAX_ENERGY,
     health: 100,
@@ -43,6 +48,8 @@ export function createPlayer(): PlayerState {
     inventory: {},
     wardrobe: [...STARTER_WARDROBE],
     outfit: { ...STARTER_OUTFIT },
+    respect: 0,
+    errand: null,
     relationships: {},
     flags: {},
     personalDay: 1,

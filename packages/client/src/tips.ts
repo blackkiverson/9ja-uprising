@@ -13,6 +13,7 @@ export const TIPS = {
   clinic: { title: 'Mercy Clinic', body: 'Pay to get health back: quick first aid, or full treatment priced by how hurt you are.' },
   traffic: { title: 'Nobody brakes for you', body: 'Cars, danfos and kekes will not stop. Getting hit costs health; at zero you wake up at the clinic.' },
   night: { title: 'Night falls', body: 'Where the street lights work, it is busy and safe. Where they are dead, agberos gather. Watch where you walk.' },
+  parcel: { title: 'Parcel run', body: 'Go where the clue says and ask around. Only one person is expecting a parcel, and they wear the colour on your card (but so might others). Late deliveries pay half; on time earns respect.' },
   agbero: { title: 'Agberos!', body: 'Red ring means they are coming for you. Run straight away (they are nearly as fast as you), or settle them for ₦500 and they leave you alone till morning. Get caught and they push you down or rob you.' },
 } as const;
 

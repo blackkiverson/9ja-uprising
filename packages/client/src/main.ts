@@ -1,6 +1,6 @@
 import '@fontsource/bungee';
 import * as THREE from 'three';
-import { AGBERO, AGBERO_LINES, CLINIC, DANFO_ROUTES, KNOCKOUT, OFFICE_SHIFT, STARTER_OUTFIT, agberosSettled, formatClock, isClothingId, type WornOutfit } from '@9ja/shared';
+import { AGBERO, AGBERO_LINES, CLINIC, DANFO_ROUTES, KNOCKOUT, OFFICE_SHIFT, PARCEL_LINES, STARTER_OUTFIT, agberosSettled, formatClock, isClothingId, type WornOutfit } from '@9ja/shared';
 import { Bubbles } from './bubbles';
 import { Tips, type TipId } from './tips';
 import { Game } from './game';
@@ -16,6 +16,7 @@ import { Daylight, skyChange } from './scene/daylight';
 import { DanfoRide } from './scene/ride';
 import { windowNight } from './scene/nightlights';
 import { Npcs } from './scene/npcs';
+import { ParcelCrowd } from './scene/parcels';
 import { Smoke } from './scene/smoke';
 import { Space } from './scene/space';
 import { Rng } from './scene/rng';
@@ -58,6 +59,7 @@ teleportTo(placeById(game.state.location).door);
 const rig = new CameraRig(camera, player.ground);
 
 const npcs = new Npcs(scene, world.npcSpots, document.getElementById('npc-tags')!);
+const parcels = new ParcelCrowd(scene, (id) => placeById(id).door, world.collisions, world.heightAt);
 let dialogue: Dialogue;
 const hud = new Hud(
   game,
@@ -68,12 +70,40 @@ const hud = new Hud(
 );
 dialogue = new Dialogue(game, (text) => hud.toast(text));
 const closet = new Closet(game, (text) => hud.toast(text));
-// E talks to whoever is closest.
+game.onDaily((reward) => hud.dailyDone(reward));
+// E talks to whoever is closest (or asks about the parcel).
 window.addEventListener('keydown', (e) => {
   if (e.code !== 'KeyE' || dialogue.isOpen || intro.active) return;
+  const asking = parcelStep();
+  if (asking) return asking.onClick();
   const npc = npcs.nearest(player.ground);
   if (npc) dialogue.open(npc);
 });
+
+// --- Parcel runs: at the drop-off, ask round until someone says it's theirs, then hand it over. ---
+/** The next step with whoever at the drop-off is in reach, if anyone. */
+function parcelStep(): { label: string; onClick: () => void } | null {
+  const e = game.state.errand;
+  const i = e && !isBusy() ? parcels.nearest(player.ground) : null;
+  if (!e || i === null) return null;
+  // Worked out again on the click: the button can outlive the person it was made for.
+  return { label: i === e.who && parcels.asked(i) ? `📦 Give ${e.name} the parcel` : '🗣️ Ask about the parcel', onClick: takeParcelStep };
+}
+function takeParcelStep(): void {
+  const e = game.state.errand;
+  const i = e && !isBusy() ? parcels.nearest(player.ground) : null;
+  if (!e || i === null) return;
+  if (i === e.who && parcels.asked(i)) return giveParcel(i);
+  parcels.markAsked(i);
+  bubbles.say(parcels.at(i), i === e.who ? PARCEL_LINES.right : pick(PARCEL_LINES.wrong), 3, 'calm');
+}
+function giveParcel(i: number): void {
+  const e = game.state.errand;
+  const late = !!e && game.now().totalMinutes > e.due;
+  const r = game.dispatch({ type: 'deliver_parcel', who: i });
+  hud.toast(r.ok ? r.message : r.reason);
+  if (r.ok) bubbles.say(parcels.at(i), pick(late ? PARCEL_LINES.late : PARCEL_LINES.thanks), 3.2, 'calm');
+}
 const isBusy = () => game.now().totalMinutes < game.state.busyUntil;
 
 // Click or tap to move: ray against the planet surface.
@@ -224,7 +254,7 @@ function nearestPlace(): Place | null {
 }
 
 // Dev-only hook for automated checks and console debugging.
-if (import.meta.env.DEV) Object.assign(window, { __9ja: { game, player, places, scene, renderer, camera, world, rig, THREE, teleportTo, intro, npcs, dialogue, traffic, findPath, music, smoke, pigeons } });
+if (import.meta.env.DEV) Object.assign(window, { __9ja: { game, player, places, scene, renderer, camera, world, rig, THREE, teleportTo, intro, npcs, dialogue, traffic, findPath, music, smoke, pigeons, parcels } });
 
 const daylight = new Daylight(scene, world.hemi, world.sun);
 
@@ -560,6 +590,8 @@ renderer.setAnimationLoop(() => {
   // Walking away ends the conversation.
   if (dialogue.isOpen && !nearNpc) dialogue.close();
   npcs.update(clock.elapsedTime, dt, focus, camera, !dialogue.isOpen);
+  parcels.sync(game.state.errand, dt);
+  parcels.update(dt, focus);
   world.update(dt);
   space.update(dt, camera);
   const hostile = playing && !rideTo && !isBusy() && lapse === null && daylight.lamps > 0.3 && !agberosSettled(game.state, game.now());
@@ -593,8 +625,9 @@ renderer.setAnimationLoop(() => {
     tips.trigger('move');
     if (near && PLACE_TIPS[near.id]) tips.trigger(PLACE_TIPS[near.id]!);
     if (nearNpc) tips.trigger('talk');
+    if (game.state.errand) tips.trigger('parcel');
     if (daylight.lamps > 0.6) tips.trigger('night');
   }
-  if (playing) hud.update(near, nearNpc, minute, harassed ? { settle: AGBERO.settle, onSettle: settleAgberos } : null, unpaid);
+  if (playing) hud.update(near, nearNpc, minute, harassed ? { settle: AGBERO.settle, onSettle: settleAgberos } : null, unpaid, parcelStep());
   renderer.render(scene, camera);
 });

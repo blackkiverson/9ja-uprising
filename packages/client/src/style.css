@@ -20,7 +20,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #76b6b1; col
   border-radius: 10px; border: 2px solid var(--ink); background: var(--accent); color: #fff; cursor: pointer; }
 #actions button:disabled { background: var(--muted); }
 #toast { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); opacity: 0;
-  transition: opacity 0.3s; white-space: nowrap; }
+  transition: opacity 0.3s; width: max-content; max-width: calc(100vw - 32px); text-align: center; z-index: 5; }
 #toast.show { opacity: 1; }
 
 /* HUD only shows once the intro has flown down to the player. */
@@ -116,7 +116,9 @@ body:not(.playing) #exit { display: none; }
 .bar.energy { width: 68%; }
 .bar.energy i { background: #d8dbd2; }
 .bar.health i { background: #c0453c; }
-#money { grid-column: 1 / -1; justify-self: start; font-size: 28px; line-height: 1; color: #6fbf5a; letter-spacing: 0.02em; }
+#status .money-row { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 12px; }
+#respect { font-size: 14px; color: #e3c24a; }
+#money { justify-self: start; font-size: 28px; line-height: 1; color: #6fbf5a; letter-spacing: 0.02em; }
 @media (max-width: 420px) {
   #weapon { width: 52px; height: 52px; }
   #weapon svg { width: 34px; height: 34px; }
@@ -183,6 +185,30 @@ body:not(.playing) #tip { display: none; }
 @keyframes loss-in { from { transform: translateX(-12px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes loss-out { to { transform: translateX(-12px); opacity: 0; } }
 @media (max-width: 420px) { #losses { top: 112px; } }
+/* The parcel you're carrying: who, where, and the time left. */
+.cards { position: absolute; top: 64px; right: 16px; width: 230px; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+/* Today's task: one line of goal, progress and reward. */
+#daily { background: var(--paper); border: 2px solid var(--ink); border-radius: 10px; box-shadow: 0 3px 0 var(--ink); padding: 6px 10px;
+  display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: baseline; font-size: 13px; line-height: 1.3; }
+#daily b { font-family: 'Bungee', system-ui, sans-serif; font-weight: 400; font-size: 11px; color: #d9773a; }
+#daily small { grid-column: 2; font-weight: 700; color: #6b6458; }
+#daily.done { opacity: 0.75; }
+#daily.done b { color: #2e7d5b; }
+#daily.done span { text-decoration: line-through; }
+.loss.gain { background: #e3f5e9; color: #1f5e40; }
+#errand { background: var(--paper); border: 2px solid var(--ink);
+  border-radius: 10px; box-shadow: 0 3px 0 var(--ink); padding: 8px 10px; display: flex; flex-direction: column; gap: 2px;
+  font-size: 13px; line-height: 1.3; pointer-events: none; }
+#errand[hidden] { display: none; }
+#errand b { font-size: 14px; }
+#errand i { display: inline-block; width: 11px; height: 11px; border: 1.5px solid var(--ink); border-radius: 3px; margin: 0 4px -1px 0; }
+#errand small { font-weight: 700; color: #2e7d5b; }
+#errand.late small { color: #c0453c; }
+@media (max-width: 420px) {
+  .cards { top: 112px; left: 16px; right: auto; width: auto; max-width: calc(100vw - 32px); align-items: flex-start; }
+  #losses { top: 166px; }
+  body.carrying #losses { top: 250px; }
+}
 
 /* Inside a building (work, clinic): a pie over it fills until you come out. */
 #stay-pie { position: fixed; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }

@@ -1,7 +1,9 @@
 import { MINUTES_PER_DAY, formatClock, type WorldTime } from './clock';
 import { AGBERO, CLINIC, DANFO, skipPrice, DANFO_ROUTES, FOOD, HIT_MIN_SPEED, KNOCKOUT, MAX_ENERGY, OFFICE_SHIFT, SLEEP, VEHICLE_HIT, type FoodId, type LocationId, type TreatmentId, type VehicleKind } from './data';
 import { CLOTHES, type ClothingId, type ClothingSlot } from './clothes';
+import { PARCEL, errandClue, newErrand } from './errands';
 import { applyChoice, checkChoice, type NpcId } from './dialogue';
+import { trackDaily } from './daily';
 import type { PlayerState } from './state';
 
 export type Action =
@@ -23,11 +25,18 @@ export type Action =
   | { type: 'buy_clothes'; item: ClothingId }
   /** At home: change into something you own. Only the hat slot can be left empty (null). */
   | { type: 'wear'; slot: ClothingSlot; item: ClothingId | null }
+  /** At the bus stop: take a parcel to deliver. */
+  | { type: 'take_parcel' }
+  /** Hand the parcel to someone in the crowd at the drop-off (who: their index). */
+  | { type: 'deliver_parcel'; who: number }
+  /** Give up: take the parcel back to the bus stop. */
+  | { type: 'return_parcel' }
   /** push: shoved to the ground (health); rob: pockets emptied (money). The caller rolls which. */
   | { type: 'agbero_rough_up'; kind: 'push' | 'rob' };
 
 export type ActionResult =
-  | { ok: true; state: PlayerState; message: string; knockedOut?: boolean; skipped?: number }
+  /** daily: today's task was just completed; the reward line. */
+  | { ok: true; state: PlayerState; message: string; knockedOut?: boolean; skipped?: number; daily?: string }
   | { ok: false; reason: string };
 
 const fail = (reason: string): ActionResult => ({ ok: false, reason });
@@ -37,6 +46,13 @@ const fail = (reason: string): ActionResult => ({ ok: false, reason });
  * The client calls it in 0.1; the server will call it to validate actions in multiplayer.
  */
 export function applyAction(prev: PlayerState, action: Action, now: WorldTime): ActionResult {
+  const r = rules(prev, action, now);
+  if (!r.ok) return r;
+  const daily = trackDaily(action, prev, r.state, now);
+  return daily ? { ...r, daily } : r;
+}
+
+function rules(prev: PlayerState, action: Action, now: WorldTime): ActionResult {
   // Traffic doesn't wait for you to be free.
   if (action.type === 'hit_by_vehicle') return hitByVehicle(prev, action.vehicle, action.speed, now);
   if (action.type === 'fast_forward') return fastForward(prev, now);
@@ -180,6 +196,41 @@ export function applyAction(prev: PlayerState, action: Action, now: WorldTime): 
       s.money -= AGBERO.settle;
       s.flags.agbero_settled = nightOf(now);
       return { ok: true, state: s, message: `Settled the agberos. -₦${AGBERO.settle}` };
+    }
+
+    case 'take_parcel': {
+      if (s.location !== PARCEL.pickupAt) return fail('Parcels go out from the bus stop.');
+      if (s.errand) return fail('Deliver the one you have first.');
+      if (s.energy < PARCEL.energyCost) return fail('Too tired to run parcels.');
+      // The dispatcher has a few a day (world days: same for everyone).
+      const today = s.flags.parcels_day === now.day ? Number(s.flags.parcels_taken ?? 0) : 0;
+      if (today >= PARCEL.perDay) return fail('Dispatcher: "Parcels don finish for today. Come tomorrow."');
+      s.flags.parcels_day = now.day;
+      s.flags.parcels_taken = today + 1;
+      s.energy -= PARCEL.energyCost;
+      s.errand = newErrand(now.totalMinutes * 31 + today, now.totalMinutes);
+      return { ok: true, state: s, message: `Parcel for ${s.errand.name}, ${errandClue(s.errand)}. Due ${formatClock(s.errand.due % MINUTES_PER_DAY)}.` };
+    }
+
+    case 'deliver_parcel': {
+      // Being at the drop-off is the client's job for now; the server will check positions.
+      const e = s.errand;
+      if (!e) return fail('You have no parcel.');
+      if (action.who !== e.who) return fail('That is not the person.');
+      const late = now.totalMinutes > e.due;
+      const pay = late ? Math.round(e.pay * PARCEL.latePay) : e.pay;
+      s.money += pay;
+      if (!late) s.respect = Math.min(100, s.respect + 1);
+      s.errand = null;
+      return { ok: true, state: s, message: late ? `Delivered late. +₦${pay.toLocaleString()} (half pay)` : `Delivered to ${e.name}. +₦${pay.toLocaleString()}, +1 respect` };
+    }
+
+    case 'return_parcel': {
+      if (!s.errand) return fail('You have no parcel.');
+      if (s.location !== PARCEL.pickupAt) return fail('Bring it back to the bus stop.');
+      s.errand = null;
+      s.respect = Math.max(0, s.respect - 1);
+      return { ok: true, state: s, message: 'Dispatcher: "You no fit find am? Wahala." -1 respect' };
     }
 
     case 'relationship': {
